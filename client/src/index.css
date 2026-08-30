@@ -1,0 +1,145 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap');
+
+/* ===================================================
+   CRICSCORE — LIGHT THEME DESIGN SYSTEM TOKENS
+   =================================================== */
+:root {
+  /* Backgrounds — layered light surfaces */
+  --bg-base:    #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-muted:   #f1f5f9;
+  --bg-subtle:  #e2e8f0;
+
+  /* Borders */
+  --border:       #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  /* Text */
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-muted:     #94a3b8;
+
+  /* Brand / Semantic Colors */
+  --color-live:    #059669;   /* deep emerald – live & on-strike */
+  --color-primary: #2563eb;   /* blue – actions, links, focus */
+  --color-ball:    #d97706;   /* amber – boundaries, 6s */
+  --color-out:     #dc2626;   /* red – wickets, out */
+  --color-win:     #16a34a;   /* green – winner, result */
+
+  /* Surface tints */
+  --tint-live:    #ecfdf5;
+  --tint-primary: #eff6ff;
+  --tint-ball:    #fffbeb;
+  --tint-out:     #fef2f2;
+
+  /* Typography */
+  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  /* Shadows — light theme uses soft colored shadows */
+  --shadow-sm: 0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-md: 0 4px 12px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.04);
+  --shadow-lg: 0 10px 30px rgba(15,23,42,0.10), 0 4px 8px rgba(15,23,42,0.04);
+  --shadow-xl: 0 20px 50px rgba(15,23,42,0.12), 0 8px 16px rgba(15,23,42,0.06);
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+}
+
+/* ===================================================
+   RESET & BASE
+   =================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Tabular numbers for all score/stat elements */
+.font-mono, [class*="score"], [class*="stat-value"] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Global focus ring */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Selection color */
+::selection {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+
+/* ===================================================
+   ANIMATIONS
+   =================================================== */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .5; }
+}
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+@keyframes scoreFlash {
+  0%   { background-color: #bbf7d0; color: #065f46; }
+  100% { background-color: transparent; color: inherit; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-spin    { animation: spin 1s linear infinite; }
+.animate-ping    { animation: ping 1.5s cubic-bezier(0,0,.2,1) infinite; }
+.animate-pulse   { animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+.animate-fade-up { animation: fadeInUp 0.3s ease-out forwards; }
+.animate-modal   { animation: modalIn 0.2s ease-out forwards; }
+.score-flash     { animation: scoreFlash 600ms ease-out forwards; }
+
+.motion-reduce\:hidden { /* @media (prefers-reduced-motion) display:none */ }
+@media (prefers-reduced-motion: reduce) {
+  .animate-ping, .animate-pulse, .score-flash { animation: none; }
+  .motion-reduce\:hidden { display: none; }
+}

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CricScore — Project Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', sans-serif; font-size: 13.5px; line-height: 1.7; color: #1e293b; background: #fff; max-width: 860px; margin: 0 auto; padding: 40px 48px 80px; }
+  .cover { text-align: center; padding: 60px 0 50px; border-bottom: 3px solid #2563eb; margin-bottom: 40px; }
+  .cover-emoji { font-size: 64px; display: block; margin-bottom: 16px; }
+  .cover h1 { font-size: 36px; font-weight: 800; color: #2563eb; margin-bottom: 6px; }
+  .cover .subtitle { font-size: 16px; color: #475569; margin-bottom: 28px; }
+  .cover-meta { display: flex; justify-content: center; gap: 32px; font-size: 12px; color: #64748b; font-weight: 600; }
+  h2 { font-size: 20px; font-weight: 800; color: #1e293b; margin: 40px 0 14px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; display: flex; align-items: center; gap: 8px; }
+  h2 .sn { background: #2563eb; color: white; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 4px; }
+  h3 { font-size: 15px; font-weight: 700; color: #334155; margin: 22px 0 10px; }
+  p { margin-bottom: 12px; color: #374151; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 12.5px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  thead tr { background: #1e3a8a; color: white; }
+  thead th { padding: 10px 14px; font-weight: 700; font-size: 11.5px; text-align: left; }
+  tbody tr:nth-child(even) { background: #f8fafc; }
+  tbody tr:hover { background: #eff6ff; }
+  td { padding: 9px 14px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  td:first-child { font-weight: 600; color: #1e293b; }
+  code { background: #f1f5f9; color: #2563eb; padding: 1px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 18px 20px; border-radius: 10px; overflow-x: auto; margin: 14px 0 22px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.65; border-left: 4px solid #2563eb; }
+  .callout { padding: 14px 18px; border-radius: 8px; margin: 16px 0; font-size: 13px; border-left: 4px solid; }
+  .info { background: #eff6ff; border-color: #2563eb; color: #1e40af; }
+  .success { background: #f0fdf4; border-color: #059669; color: #065f46; }
+  .callout strong { display: block; margin-bottom: 4px; }
+  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+  .fc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; border-top: 3px solid #2563eb; }
+  .fc .icon { font-size: 22px; margin-bottom: 6px; display: block; }
+  .fc .title { font-weight: 700; color: #1e293b; font-size: 13px; margin-bottom: 4px; }
+  .fc .desc { font-size: 12px; color: #64748b; line-height: 1.5; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .b-green { background: #dcfce7; color: #15803d; }
+  .b-amber { background: #fef3c7; color: #92400e; }
+  .b-blue { background: #dbeafe; color: #1d4ed8; }
+  .schema { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 20px; margin: 12px 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.8; }
+  .fn { color: #2563eb; font-weight: 600; } .ft { color: #059669; } .fc2 { color: #64748b; }
+  .rag-step { display: flex; gap: 12px; margin-bottom: 12px; }
+  .rag-num { width: 36px; height: 36px; border-radius: 50%; background: #2563eb; color: white; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
+  .rag-content { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 16px; flex: 1; }
+  .rag-content .rt { font-weight: 700; color: #1e40af; font-size: 13px; } .rag-content .rd { font-size: 12px; color: #374151; }
+  .check { color: #059669; font-weight: 700; } .cross { color: #dc2626; font-weight: 700; }
+  .arch { background: #0f172a; color: #94a3b8; border-radius: 12px; padding: 20px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.9; margin: 16px 0; border: 1px solid #1e293b; overflow-x: auto; }
+  .arch .lt { color: #38bdf8; } .arch .ar { color: #4ade80; } .arch .hl { color: #fbbf24; }
+  .doc-footer { margin-top: 60px; padding-top: 20px; border-top: 2px solid #e2e8f0; font-size: 12px; color: #94a3b8; display: flex; justify-content: space-between; }
+  .print-btn { position: fixed; top: 20px; right: 20px; background: #2563eb; color: white; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(37,99,235,0.4); font-family: 'Inter', sans-serif; z-index: 999; }
+  .print-btn:hover { background: #1d4ed8; }
+  @media print { .print-btn { display: none; } body { padding: 16px 28px 40px; } }
+</style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">🖨️ Save as PDF</button>
+
+<div class="cover">
+  <span class="cover-emoji">🏏</span>
+  <h1>CricScore</h1>
+  <div class="subtitle">Real-Time Fantasy Cricket Platform — Project Report</div>
+  <div class="cover-meta">
+    <span>👤 Aditya Meharda</span>
+    <span>📅 August 2026</span>
+    <span>🔖 Version 1.0</span>
+    <span>⚙️ MERN Stack + Socket.IO</span>
+  </div>
+</div>
+
+<h2><span class="sn">01</span> Executive Summary</h2>
+<p><strong>CricScore</strong> is a full-stack, real-time fantasy cricket web application that enables cricket enthusiasts to track live match scores, build fantasy teams, compete in private/public contests, and get AI-powered match insights. The platform integrates live match data from <strong>CricAPI</strong>, propagates updates over <strong>WebSockets (Socket.IO)</strong>, persists data in <strong>MongoDB</strong>, and delivers an interactive interface built with <strong>React 18</strong>.</p>
+<div class="callout info"><strong>🚀 Future Enhancement — RAG Integration</strong>The CricSense AI assistant will be upgraded with a Retrieval-Augmented Generation (RAG) pipeline, enabling it to answer tactical match questions grounded in real, live match data and player statistics — eliminating AI hallucination.</div>
+
+<h2><span class="sn">02</span> Project Objectives</h2>
+<table>
+  <thead><tr><th>#</th><th>Objective</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Real-time ball-by-ball score updates with sub-minute latency</td><td><span class="badge b-green">✅ Complete</span></td></tr>
+    <tr><td>2</td><td>Fantasy team builder with captain/vice-captain multipliers</td><td><span class="badge b-green">✅ Complete</span></td></tr>
+    <tr><td>3</td><td>Private and public contest creation and live leaderboard</td><td><span class="badge b-green">✅ Complete</span></td></tr>
+    <tr><td>4</td><td>Authentic scorecard and squad data from live APIs (no fake data)</td><td><span class="badge b-green">✅ Complete</span></td></tr>
+    <tr><td>5</td><td>User authentication with JWT and profile tracking</td><td><span class="badge b-green">✅ Complete</span></td></tr>
+    <tr><td>6</td><td>CricSense AI with RAG for live match intelligence</td><td><span class="badge b-amber">🔜 Planned</span></td></tr>
+  </tbody>
+</table>
+
+<h2><span class="sn">03</span> Technology Stack</h2>
+<h3>Backend</h3>
+<table>
+  <thead><tr><th>Technology</th><th>Version</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>Node.js</td><td>v18+</td><td>Server-side JavaScript runtime</td></tr>
+    <tr><td>Express.js</td><td>v5.x</td><td>RESTful API routing framework</td></tr>
+    <tr><td>MongoDB + Mongoose</td><td>v9.x</td><td>NoSQL persistent data store</td></tr>
+    <tr><td>Socket.IO</td><td>v4.8</td><td>Real-time bidirectional event communication</td></tr>
+    <tr><td>node-cron</td><td>v4.x</td><td>Scheduled CricAPI polling every 30 seconds</td></tr>
+    <tr><td>JWT + bcryptjs</td><td>v9/v2</td><td>Token authentication + password hashing</td></tr>
+    <tr><td>Axios</td><td>v1.x</td><td>HTTP client for CricAPI requests</td></tr>
+  </tbody>
+</table>
+<h3>Frontend</h3>
+<table>
+  <thead><tr><th>Technology</th><th>Version</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>React</td><td>v18.2</td><td>Component-based UI with hooks</td></tr>
+    <tr><td>React Router DOM</td><td>v6.18</td><td>Client-side SPA routing</td></tr>
+    <tr><td>Vite</td><td>v5.0</td><td>Fast HMR dev server + bundler</td></tr>
+    <tr><td>socket.io-client</td><td>v4.7</td><td>WebSocket connection to server</td></tr>
+    <tr><td>Axios</td><td>v1.6</td><td>HTTP requests to REST API</td></tr>
+    <tr><td>Vanilla CSS (custom)</td><td>—</td><td>Design tokens, animations, responsive layouts</td></tr>
+    <tr><td>Google Fonts</td><td>—</td><td>Space Grotesk, Inter, JetBrains Mono</td></tr>
+  </tbody>
+</table>
+<h3>External Services</h3>
+<table>
+  <thead><tr><th>Service</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>CricAPI (cricapi.com)</td><td>Live match scores, scorecards, squad lineups</td></tr>
+    <tr><td>MongoDB Atlas</td><td>Cloud-hosted database</td></tr>
+    <tr><td>FlagCDN (flagcdn.com)</td><td>Country flag images for team identification</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="sn">04</span> System Architecture</h2>
+<div class="arch">
+<span class="lt">┌─────────────────────────────────────────────────────────────┐
+│                CLIENT (React + Vite)                        │
+│  ┌──────────┐  ┌────────────┐  ┌───────────┐  ┌─────────┐  │
+│  │ Matches  │  │MatchDetails│  │TeamBuilder│  │CricSense│  │
+│  └──────────┘  └────────────┘  └───────────┘  └─────────┘  │
+└─────────────────────────────────────────────────────────────┘</span>
+                     │ HTTP REST + Socket.IO
+<span class="lt">┌─────────────────────┼───────────────────────────────────────┐
+│             SERVER (Express + Node.js)                      │
+│  REST API: /api/matches • /api/auth • /api/fantasy         │
+│  Socket.IO: match_update • leaderboard_update              │
+│  Automation: node-cron → CricAPI poll → MongoDB → emit     │
+└─────────────────────┼───────────────────────────────────────┘</span>
+              <span class="ar">┌────────┴───────────┐</span>
+              │                    │
+<span class="hl">┌─────────────┴──┐     ┌────────┴──────────┐
+│  MongoDB Atlas │     │  CricAPI (Live)    │
+│  (Data Store)  │     │  (Score Source)    │
+└────────────────┘     └───────────────────┘</span></div>
+
+<h2><span class="sn">05</span> Core Features</h2>
+<div class="feature-grid">
+  <div class="fc"><span class="icon">📡</span><div class="title">Live Score Tracking</div><div class="desc">CricAPI polled every 30s via node-cron. Scores broadcast over Socket.IO rooms. 600ms flash animation on score change.</div></div>
+  <div class="fc"><span class="icon">🏏</span><div class="title">Fantasy Team Builder</div><div class="desc">Select exactly 11 players, assign Captain (2×) and Vice-Captain (1.5×). Progress bar fills as players are selected.</div></div>
+  <div class="fc"><span class="icon">🏆</span><div class="title">Private Contests</div><div class="desc">Create contest with unique auto-generated code (max 2–10 players). Friends join using the code. General leaderboard also available.</div></div>
+  <div class="fc"><span class="icon">📊</span><div class="title">Live Leaderboard</div><div class="desc">Fantasy points recalculate in real-time. 🥇🥈🥉 medals for top 3. Click row to reveal rival's squad lineup.</div></div>
+  <div class="fc"><span class="icon">📋</span><div class="title">Authentic Scorecard</div><div class="desc">Lazy-loaded from CricAPI on demand, cached 60 seconds. Batting and bowling tables. No fake data shown.</div></div>
+  <div class="fc"><span class="icon">👥</span><div class="title">Squad / Playing XI</div><div class="desc">WK / BAT / AR / BOWL role chips per player. Captain and VC visually highlighted. Cached 10 minutes.</div></div>
+  <div class="fc"><span class="icon">🔐</span><div class="title">User Authentication</div><div class="desc">Registration + login with JWT. Passwords hashed with bcryptjs (salt=10). Profile tracks coins, wins, rank.</div></div>
+  <div class="fc"><span class="icon">🤖</span><div class="title">CricSense AI</div><div class="desc">Chat-style modal for match intelligence. Planned: full RAG pipeline with live match documents and vector search.</div></div>
+</div>
+
+<h3>Real-Time Data Pipeline</h3>
+<pre>CricAPI poll (every 30 seconds via node-cron)
+  → Extract: scores, batsmen, bowler stats, match status
+  → Match.findOneAndUpdate() → upsert to MongoDB
+  → io.to('live_matches').emit('match_update', match)
+  → io.to(`match_${matchId}`).emit('match_update', match)
+
+React Client:
+  socket.on('match_update', handler)
+  → setMatch(prev => ({...prev, ...updated}))
+  → ScoreDisplay flashes green 600ms on value change</pre>
+
+<h2><span class="sn">06</span> Database Schema</h2>
+<h3>Match Collection</h3>
+<div class="schema">
+<span class="fn">matchId</span>:        <span class="ft">String</span>   <span class="fc2">// Unique CricAPI match ID</span>
+<span class="fn">teamA</span>, <span class="fn">teamB</span>:    <span class="ft">String</span>   <span class="fc2">// e.g. "India", "Australia"</span>
+<span class="fn">scoreA</span>, <span class="fn">scoreB</span>:  <span class="ft">String</span>   <span class="fc2">// e.g. "248/9 (50.0)"</span>
+<span class="fn">status</span>:         <span class="ft">String</span>   <span class="fc2">// "Live" | "Upcoming" | result text</span>
+<span class="fn">matchStarted</span>:   <span class="ft">Boolean</span>
+<span class="fn">matchEnded</span>:     <span class="ft">Boolean</span>
+<span class="fn">venue</span>, <span class="fn">date</span>:     <span class="ft">String</span>
+<span class="fn">matchType</span>:      <span class="ft">String</span>   <span class="fc2">// "T20" | "ODI" | "Test"</span>
+<span class="fn">squadA</span>, <span class="fn">squadB</span>: <span class="ft">[String]</span> <span class="fc2">// Player name arrays</span>
+<span class="fn">striker</span>:        <span class="ft">String</span>   <span class="fc2">// On-strike batter name</span>
+<span class="fn">strikerRuns</span>:    <span class="ft">Number</span>
+<span class="fn">strikerBalls</span>:   <span class="ft">Number</span>
+<span class="fn">nonStriker</span>:     <span class="ft">String</span>
+<span class="fn">bowler</span>:         <span class="ft">String</span>   <span class="fc2">// Current bowler</span>
+<span class="fn">bowlerOvers</span>:    <span class="ft">Number</span>
+<span class="fn">bowlerRuns</span>:     <span class="ft">Number</span>
+<span class="fn">bowlerWickets</span>:  <span class="ft">Number</span></div>
+
+<h3>User Collection</h3>
+<div class="schema">
+<span class="fn">username</span>:      <span class="ft">String (unique)</span>
+<span class="fn">email</span>:         <span class="ft">String (unique)</span>
+<span class="fn">password</span>:      <span class="ft">String</span>   <span class="fc2">// bcrypt hashed, salt=10</span>
+<span class="fn">virtualCoins</span>:  <span class="ft">Number</span>   <span class="fc2">// Default: 10000</span>
+<span class="fn">totalMatches</span>:  <span class="ft">Number</span>
+<span class="fn">totalWins</span>:     <span class="ft">Number</span>
+<span class="fn">bestRank</span>:      <span class="ft">Number</span></div>
+
+<h3>Fantasy Team Collection</h3>
+<div class="schema">
+<span class="fn">userId</span>:       <span class="ft">ObjectId</span>  <span class="fc2">// ref: User</span>
+<span class="fn">matchId</span>:      <span class="ft">String</span>
+<span class="fn">contestId</span>:    <span class="ft">String</span>    <span class="fc2">// "general" or private code</span>
+<span class="fn">players</span>:      <span class="ft">[String]</span>  <span class="fc2">// Exactly 11 player names</span>
+<span class="fn">captain</span>:      <span class="ft">String</span>    <span class="fc2">// 2× points multiplier</span>
+<span class="fn">viceCaptain</span>:  <span class="ft">String</span>    <span class="fc2">// 1.5× points multiplier</span>
+<span class="fn">totalPoints</span>:  <span class="ft">Number</span>    <span class="fc2">// Recalculated after each update</span></div>
+
+<h2><span class="sn">07</span> API Reference</h2>
+<table>
+  <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge b-green">GET</span></td><td><code>/api/matches</code></td><td>List all matches</td></tr>
+    <tr><td><span class="badge b-green">GET</span></td><td><code>/api/matches/:id</code></td><td>Single match by matchId or MongoDB _id</td></tr>
+    <tr><td><span class="badge b-green">GET</span></td><td><code>/api/matches/:id/scorecard</code></td><td>Scorecard from CricAPI (60s cache)</td></tr>
+    <tr><td><span class="badge b-green">GET</span></td><td><code>/api/matches/:id/squad</code></td><td>Squad from CricAPI (10min cache)</td></tr>
+    <tr><td><span class="badge b-amber">PATCH</span></td><td><code>/api/matches/:id/live</code></td><td>Update live player/score fields</td></tr>
+    <tr><td><span class="badge b-blue">POST</span></td><td><code>/api/auth/register</code></td><td>Create new user account</td></tr>
+    <tr><td><span class="badge b-blue">POST</span></td><td><code>/api/auth/login</code></td><td>Login → returns JWT token</td></tr>
+    <tr><td><span class="badge b-green">GET</span></td><td><code>/api/auth/profile</code></td><td>Authenticated user profile</td></tr>
+    <tr><td><span class="badge b-blue">POST</span></td><td><code>/api/fantasy/team</code></td><td>Submit 11-player fantasy team</td></tr>
+    <tr><td><span class="badge b-green">GET</span></td><td><code>/api/fantasy/leaderboard/:id</code></td><td>Ranked leaderboard by points</td></tr>
+    <tr><td><span class="badge b-blue">POST</span></td><td><code>/api/contests/create</code></td><td>Create private contest</td></tr>
+    <tr><td><span class="badge b-blue">POST</span></td><td><code>/api/contests/join</code></td><td>Join contest by code</td></tr>
+  </tbody>
+</table>
+
+<h3>Socket.IO Events</h3>
+<table>
+  <thead><tr><th>Event</th><th>Direction</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>join_match</code></td><td>Client → Server</td><td>Subscribe to specific match room</td></tr>
+    <tr><td><code>join_live_matches</code></td><td>Client → Server</td><td>Subscribe to all live match updates</td></tr>
+    <tr><td><code>match_update</code></td><td>Server → Client</td><td>Real-time score/player broadcast</td></tr>
+    <tr><td><code>leaderboard_update</code></td><td>Server → Client</td><td>Updated fantasy rankings</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="sn">08</span> RAG Integration Plan</h2>
+<h3>What is RAG?</h3>
+<p><strong>Retrieval-Augmented Generation (RAG)</strong> is an AI architecture that retrieves relevant context from a knowledge base, augments an LLM prompt with that context, and generates a factually grounded response. This eliminates hallucination on live or domain-specific data that the LLM was not trained on.</p>
+
+<h3>Why RAG vs Fine-tuning?</h3>
+<table>
+  <thead><tr><th>Aspect</th><th>RAG</th><th>Fine-tuning</th></tr></thead>
+  <tbody>
+    <tr><td>Live data freshness</td><td class="check">✅ Real-time (every 30s)</td><td class="cross">❌ Static (needs retraining)</td></tr>
+    <tr><td>Cost</td><td class="check">✅ Inference only</td><td class="cross">❌ GPU training cost</td></tr>
+    <tr><td>Source transparency</td><td class="check">✅ Can cite source chunks</td><td class="cross">❌ Black box</td></tr>
+    <tr><td>Live stat accuracy</td><td class="check">✅ Grounded in real match</td><td class="cross">❌ Hallucinates live scores</td></tr>
+  </tbody>
+</table>
+
+<h3>5-Step RAG Pipeline</h3>
+<div class="rag-step"><div class="rag-num">1</div><div class="rag-content"><div class="rt">User Query</div><div class="rd">"Who is the best fantasy pick right now?" — entered in CricSense chat</div></div></div>
+<div class="rag-step"><div class="rag-num">2</div><div class="rag-content"><div class="rt">Query Embedding</div><div class="rd">Text converted to dense vector using text-embedding-ada-002 or sentence-transformers</div></div></div>
+<div class="rag-step"><div class="rag-num">3</div><div class="rag-content"><div class="rt">Vector Similarity Search</div><div class="rd">Top-5 relevant document chunks retrieved from Pinecone/ChromaDB (namespace: match_{matchId})</div></div></div>
+<div class="rag-step"><div class="rag-num">4</div><div class="rag-content"><div class="rt">Prompt Augmentation</div><div class="rd">Retrieved chunks (live scorecard, player form, venue report, H2H records) injected as LLM context</div></div></div>
+<div class="rag-step"><div class="rag-num">5</div><div class="rag-content"><div class="rt">Grounded LLM Response</div><div class="rd">"Jos Buttler (45* off 32b, SR 140.6) is top pick — 3 consecutive fifties at this venue against spinners."</div></div></div>
+
+<h3>RAG Data Sources</h3>
+<table>
+  <thead><tr><th>Source</th><th>Data</th><th>Refresh</th></tr></thead>
+  <tbody>
+    <tr><td>CricAPI Live</td><td>Current innings scorecard, live player stats</td><td>Every 30s</td></tr>
+    <tr><td>CricAPI Historical</td><td>Last 20 matches per player</td><td>Daily</td></tr>
+    <tr><td>MongoDB Docs</td><td>All stored match and squad data</td><td>Real-time</td></tr>
+    <tr><td>ICC Rankings</td><td>Player T20/ODI/Test rankings</td><td>Weekly</td></tr>
+    <tr><td>Venue Database</td><td>Ground dimensions, pitch behavior, average scores</td><td>Static</td></tr>
+  </tbody>
+</table>
+
+<h3>New Backend Endpoint (Planned)</h3>
+<pre>POST /api/ai/cricsense
+{ "query": "Who is the best fantasy pick?", "matchId": "abc-123" }
+
+Server flow:
+1. Embed the query vector
+2. Search Pinecone (namespace: match_abc-123) → top-5 chunks
+3. Build augmented prompt with retrieved context
+4. Call LLM API (GPT-4 / Gemini)
+5. Stream response tokens back to CricSenseModal</pre>
+
+<h2><span class="sn">09</span> Security</h2>
+<table>
+  <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr><td>Password storage</td><td>bcryptjs with salt rounds = 10</td></tr>
+    <tr><td>API authentication</td><td>JWT with expiry; Bearer token in Authorization header</td></tr>
+    <tr><td>CricAPI key exposure</td><td>Stored in server-side .env only, never shipped to client</td></tr>
+    <tr><td>Fantasy team abuse</td><td>Server validates: exactly 11 players, valid C/VC, one team per user/match/contest</td></tr>
+    <tr><td>Data integrity</td><td>No mock/fake data: returns empty state if CricAPI unavailable</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="sn">10</span> Running the Project</h2>
+<pre># server/.env
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/cricscore
+CRICAPI_KEY=your_cricapi_key_here
+JWT_SECRET=your_jwt_secret_here
+
+# Terminal 1 — Backend (http://localhost:5000)
+cd cric/server && npm install && npm run dev
+
+# Terminal 2 — Frontend (http://localhost:5173)
+cd cric/client && npm install && npm run dev</pre>
+
+<h2><span class="sn">11</span> Conclusion</h2>
+<p>CricScore demonstrates a complete, production-minded MERN stack application with real-time WebSocket capabilities at its core. The platform successfully delivers:</p>
+<div class="callout success"><strong>✅ Live data ingestion</strong>CricAPI → node-cron (30s) → MongoDB → Socket.IO → React — with sub-minute latency and animated updates.</div>
+<div class="callout success"><strong>✅ Fantasy gaming mechanics</strong>Team selection with captain multipliers, private contests with unique codes, and a live-ranked leaderboard that updates as the match progresses.</div>
+<div class="callout success"><strong>✅ Production-grade UX</strong>Light theme CSS design system, glass cards, shimmer loading states, responsive layouts, and JWT-secured routes.</div>
+<div class="callout info"><strong>🔜 RAG Integration (Next Phase)</strong>The planned RAG pipeline for CricSense AI will transform it from a pattern-matched chatbot into a genuinely intelligent cricket analyst, answering questions grounded in real live match data — making CricScore one of the most technically innovative cricket platforms available.</div>
+
+<div class="doc-footer">
+  <span>🏏 CricScore — Real-Time Fantasy Cricket Platform</span>
+  <span>Author: Aditya Meharda · August 2026 · v1.0</span>
+</div>
+
+</body>
+</html>
