@@ -1,0 +1,21 @@
+{
+  "name": "live-data-automation",
+  "version": "1.0.0",
+  "description": "A project to automate API calls and render live data on a website.",
+  "main": "src/automation.js",
+  "scripts": {
+    "start": "node src/automation.js",
+    "dev": "nodemon src/automation.js"
+  },
+  "dependencies": {
+    "axios": "^0.21.1",
+    "express": "^4.17.1",
+    "mongoose": "^5.10.9",
+    "node-cron": "^2.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.7"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+}
