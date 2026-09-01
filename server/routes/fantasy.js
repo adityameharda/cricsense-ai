@@ -188,4 +188,52 @@ router.get('/leaderboard/:matchId', async (req, res) => {
   }
 });
 
+// ── POST /api/fantasy/:matchId/points ───────────────────────────────
+router.post('/:matchId/points', async (req, res) => {
+  try {
+    const { matchId } = req.params;
+    const { playerName, pointsToAdd } = req.body;
+
+    if (!matchId || !playerName || pointsToAdd === undefined) {
+      return res.status(400).json({ error: 'Missing matchId, playerName, or pointsToAdd' });
+    }
+
+    const cleanPlayer = playerName.trim().toLowerCase();
+
+    // 1. Update MatchPoint ledger for this player in this match
+    await MatchPoint.findOneAndUpdate(
+      { matchId, playerName },
+      { $inc: { points: pointsToAdd } },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    // 2. Award points with Captain (2x) and Vice-Captain (1.5x) multipliers across fantasy teams
+    const teams = await FantasyTeam.find({ matchId });
+
+    for (const team of teams) {
+      const hasPlayer = (team.players || []).some(
+        p => p.toLowerCase().includes(cleanPlayer) || cleanPlayer.includes(p.toLowerCase())
+      );
+
+      if (hasPlayer) {
+        let multiplier = 1;
+        if (team.captain && (team.captain.toLowerCase().includes(cleanPlayer) || cleanPlayer.includes(team.captain.toLowerCase()))) {
+          multiplier = 2;
+        } else if (team.viceCaptain && (team.viceCaptain.toLowerCase().includes(cleanPlayer) || cleanPlayer.includes(team.viceCaptain.toLowerCase()))) {
+          multiplier = 1.5;
+        }
+
+        const delta = pointsToAdd * multiplier;
+        team.totalPoints = (team.totalPoints || 0) + delta;
+        await team.save();
+      }
+    }
+
+    res.json({ success: true, matchId, playerName, pointsAwarded: pointsToAdd });
+  } catch (err) {
+    console.error('Error awarding fantasy points:', err);
+    res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
 module.exports = router;
