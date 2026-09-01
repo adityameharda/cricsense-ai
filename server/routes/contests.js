@@ -1,28 +1,46 @@
 const express = require('express');
 const Contest = require('../models/contest');
+const Match = require('../models/match');
 const FantasyTeam = require('../models/fantasyTeam');
+const User = require('../models/user');
 const { authenticateToken } = require('./auth');
+const { checkMatchEntryEligibility } = require('../helpers/matchTiming');
 const router = express.Router();
 
-// Create a new contest
+// Create a new contest (Only allowed before match starts and > 2 min before start)
 router.post('/create', authenticateToken, async (req, res) => {
   try {
     const { name, matchId, entryFee = 0, maxParticipants = 20 } = req.body;
 
     if (!name || !matchId) {
-      return res.status(400).json({ error: 'Contest name and match ID are required' });
+      return res.status(400).json({ error: 'Contest name and match fixture ID are required' });
     }
 
-    // Generate unique contest ID
+    // Find the match
+    const match = await Match.findOne({
+      $or: [{ matchId }, { _id: matchId.length === 24 ? matchId : null }]
+    });
+
+    if (!match) {
+      return res.status(404).json({ error: 'Match fixture not found' });
+    }
+
+    // Check entry eligibility (Rule: only before match start, locked 2 min before)
+    const eligibility = checkMatchEntryEligibility(match);
+    if (!eligibility.eligible) {
+      return res.status(400).json({ error: eligibility.error });
+    }
+
+    // Generate unique 6-character contest code
     const contestId = Math.random().toString(36).substring(2, 8).toUpperCase();
 
     const contest = new Contest({
       contestId,
-      name,
+      name: name.trim(),
       createdBy: req.user._id,
-      matchId,
-      entryFee,
-      maxParticipants,
+      matchId: match.matchId || match._id.toString(),
+      entryFee: Number(entryFee) || 0,
+      maxParticipants: Number(maxParticipants) || 20,
       participants: [req.user._id]
     });
 
@@ -34,53 +52,69 @@ router.post('/create', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Contest creation error:', error);
-    res.status(500).json({ error: 'Server error during contest creation' });
+    res.status(500).json({ error: error.message || 'Server error during contest creation' });
   }
 });
 
-// Join a contest
+// Join a contest (Only allowed before match starts and > 2 min before start)
 router.post('/join/:contestId', authenticateToken, async (req, res) => {
   try {
     const { contestId } = req.params;
-    const contest = await Contest.findOne({ contestId });
+    const contest = await Contest.findOne({ contestId: contestId.toUpperCase() });
 
     if (!contest) {
-      return res.status(404).json({ error: 'Contest not found' });
+      return res.status(404).json({ error: 'Contest not found with this code' });
     }
 
     if (!contest.isActive) {
-      return res.status(400).json({ error: 'Contest is no longer active' });
+      return res.status(400).json({ error: 'Not applicable now. Contest is no longer active.' });
     }
 
-    if (contest.participants.includes(req.user._id)) {
-      return res.status(400).json({ error: 'Already joined this contest' });
+    // Find match for this contest and verify timing
+    const match = await Match.findOne({
+      $or: [{ matchId: contest.matchId }, { _id: contest.matchId.length === 24 ? contest.matchId : null }]
+    });
+
+    if (match) {
+      const eligibility = checkMatchEntryEligibility(match);
+      if (!eligibility.eligible) {
+        return res.status(400).json({ error: eligibility.error });
+      }
+    }
+
+    const userIdStr = req.user._id.toString();
+    const alreadyJoined = contest.participants.some(p => p.toString() === userIdStr);
+
+    if (alreadyJoined) {
+      return res.status(400).json({ error: 'You have already joined this contest room.' });
     }
 
     if (contest.participants.length >= contest.maxParticipants) {
-      return res.status(400).json({ error: 'Contest is full' });
+      return res.status(400).json({ error: `Contest room is full (${contest.maxParticipants} players max).` });
     }
 
-    // Check if user has enough coins
+    // Check virtual coin balance
     if (req.user.virtualCoins < contest.entryFee) {
-      return res.status(400).json({ error: 'Insufficient virtual coins' });
+      return res.status(400).json({ error: 'Insufficient fantasy points/coins balance.' });
     }
 
-    // Deduct entry fee
-    req.user.virtualCoins -= contest.entryFee;
-    await req.user.save();
+    // Deduct entry fee if any
+    if (contest.entryFee > 0) {
+      req.user.virtualCoins -= contest.entryFee;
+      await req.user.save();
+    }
 
-    // Add user to contest
     contest.participants.push(req.user._id);
     contest.prizePool += contest.entryFee;
     await contest.save();
 
     res.json({
-      message: 'Successfully joined contest',
+      message: 'Successfully joined contest room!',
       contest
     });
   } catch (error) {
     console.error('Join contest error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error while joining contest' });
   }
 });
 
@@ -88,7 +122,7 @@ router.post('/join/:contestId', authenticateToken, async (req, res) => {
 router.get('/:contestId', async (req, res) => {
   try {
     const { contestId } = req.params;
-    const contest = await Contest.findOne({ contestId })
+    const contest = await Contest.findOne({ contestId: contestId.toUpperCase() })
       .populate('createdBy', 'username')
       .populate('participants', 'username');
 
@@ -98,7 +132,7 @@ router.get('/:contestId', async (req, res) => {
 
     res.json({ contest });
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error fetching contest' });
   }
 });
 
@@ -112,11 +146,11 @@ router.get('/match/:matchId', async (req, res) => {
 
     res.json({ contests });
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error fetching match contests' });
   }
 });
 
-// Get user's contests
+// Get user's active contests
 router.get('/user/contests', authenticateToken, async (req, res) => {
   try {
     const contests = await Contest.find({
@@ -127,64 +161,6 @@ router.get('/user/contests', authenticateToken, async (req, res) => {
 
     res.json({ contests });
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Settle contest (Admin or System)
-// BUG 2 FIX: use User.findById(team.userId) — userId is stored as ObjectId string
-router.post('/settle/:contestId', authenticateToken, async (req, res) => {
-  try {
-    const { contestId } = req.params;
-    const contest = await Contest.findOne({ contestId }).populate('participants', 'username');
-
-    if (!contest) {
-      return res.status(404).json({ error: 'Contest not found' });
-    }
-
-    if (!contest.isActive) {
-      return res.status(400).json({ error: 'Contest is already settled' });
-    }
-
-    // Fetch leaderboard sorted by points desc
-    const leaderboard = await FantasyTeam.find({
-      matchId: contest.matchId,
-      contestId: contest.contestId
-    }).sort({ totalPoints: -1 });
-
-    if (leaderboard.length === 0) {
-      return res.status(400).json({ error: 'No teams found for this contest' });
-    }
-
-    // Prize distribution: 1st=50%, 2nd=30%, 3rd=20%
-    const prizePool = contest.prizePool;
-    const payouts = [0.5, 0.3, 0.2];
-
-    for (let i = 0; i < leaderboard.length; i++) {
-      const team = leaderboard[i];
-      // BUG 2 FIX: userId is stored as ObjectId string — use findById
-      const dbUser = await require('../models/user').findById(team.userId);
-      if (dbUser) {
-        dbUser.totalMatches = (dbUser.totalMatches || 0) + 1;
-        // Update best rank (lower rank number = better)
-        if (!dbUser.bestRank || (i + 1) < dbUser.bestRank) {
-          dbUser.bestRank = i + 1;
-        }
-        if (i < payouts.length && prizePool > 0) {
-          const winnings = Math.floor(prizePool * payouts[i]);
-          dbUser.virtualCoins = (dbUser.virtualCoins || 0) + winnings;
-          if (i === 0) dbUser.totalWins = (dbUser.totalWins || 0) + 1;
-        }
-        await dbUser.save();
-      }
-    }
-
-    contest.isActive = false;
-    await contest.save();
-
-    res.json({ message: 'Contest settled successfully', contest });
-  } catch (error) {
-    console.error('Contest settlement error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

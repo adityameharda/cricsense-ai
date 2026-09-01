@@ -6,6 +6,7 @@ import Icon from './common/Icons';
 import OverStrip from './common/OverStrip';
 import ScoreDisplay from './common/ScoreDisplay';
 import { CardSkeleton, HeroSkeleton } from './common/Skeletons';
+import { formatToIST } from '../utils/formatTime';
 
 const FLAG_MAP = {
   'india': 'in', 'australia': 'au', 'england': 'gb-eng', 'south africa': 'za',
@@ -31,12 +32,14 @@ const MatchCard = React.memo(({ match }) => {
   const flagA = match.teamALogo || getFlagUrl(match.teamA);
   const flagB = match.teamBLogo || getFlagUrl(match.teamB);
 
+  const displayStatus = formatToIST(match.status);
+
   return (
-    <div className={`match-card${isLive ? ' is-live' : ''}`}>
+    <div className={`match-card ${isLive ? 'is-live' : ''}`}>
       {/* Eyebrow */}
       <div className="card-eyebrow">
         <span className="card-venue-text">
-          {match.venue || 'TBD'} · {match.matchType || 'T20'}
+          <Icon name="mappin" size={12} /> {match.venue || 'TBD'} · {match.matchType || 'T20'}
         </span>
         {isLive ? (
           <span className="status-pill live">
@@ -44,18 +47,22 @@ const MatchCard = React.memo(({ match }) => {
             LIVE
           </span>
         ) : isEnded ? (
-          <span className="status-pill final">FINAL</span>
+          <span className="status-pill final">
+            <Icon name="trophy" size={11} /> FINAL
+          </span>
         ) : (
-          <span className="status-pill upcoming">UPCOMING</span>
+          <span className="status-pill upcoming">
+            <Icon name="clock" size={11} /> UPCOMING
+          </span>
         )}
       </div>
 
-      {/* Teams */}
-      <Link to={`/match-center/${id}`} style={{ textDecoration: 'none' }}>
+      {/* Teams Block */}
+      <Link to={`/match-center/${id}`} className="card-teams-link">
         <div className="card-teams-block">
           {[
-            { name: match.teamA, score: match.scoreA, flag: flagA },
-            { name: match.teamB, score: match.scoreB, flag: flagB, isBatting: isLive },
+            { name: match.teamA, score: match.scoreA, flag: flagA, isBatting: isLive && !match.scoreB },
+            { name: match.teamB, score: match.scoreB, flag: flagB, isBatting: isLive && !!match.scoreB },
           ].map(({ name, score, flag, isBatting }) => (
             <div key={name} className="card-team-row">
               <div className="team-info-side">
@@ -66,7 +73,7 @@ const MatchCard = React.memo(({ match }) => {
                 )}
                 <span className="team-name-label">{name}</span>
               </div>
-              <span className={`team-score-value${isBatting ? ' batting' : ''}`}>
+              <span className={`team-score-value ${isBatting ? 'batting' : ''}`}>
                 <ScoreDisplay score={score} size="sm" highlight={!!isBatting} />
               </span>
             </div>
@@ -74,30 +81,36 @@ const MatchCard = React.memo(({ match }) => {
         </div>
       </Link>
 
-      {/* Over strip */}
+      {/* Over strip for live match */}
       {isLive && (
-        <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+        <div className="card-over-strip-wrap">
           <OverStrip balls={['1', '•', '4', 'W', '6', '1']} label="Last Over" />
         </div>
       )}
 
       {/* Status line */}
-      {match.status && (
-        <div className="card-status-line">⚡ {match.status}</div>
+      {displayStatus && (
+        <div className="card-status-line">
+          <Icon name="zap" size={12} color="var(--color-primary)" />
+          <span>{displayStatus}</span>
+        </div>
       )}
 
       {/* Actions */}
       <div className="card-actions">
         <Link to={`/match-center/${id}`} className="card-btn primary">
-          {isLive ? '⚡ Live Center' : '📊 Scorecard'}
+          <Icon name={isLive ? "zap" : "activity"} size={13} />
+          <span>{isLive ? 'Live Center' : 'Scorecard'}</span>
         </Link>
         {!match.matchStarted && (
           <Link to={`/build-team/${id}`} className="card-btn secondary">
-            🏆 Fantasy
+            <Icon name="cricket" size={13} />
+            <span>Fantasy</span>
           </Link>
         )}
         <Link to={`/leaderboard/${id}`} className="card-btn secondary">
-          📈 Board
+          <Icon name="trophy" size={13} />
+          <span>Board</span>
         </Link>
       </div>
     </div>
@@ -150,10 +163,10 @@ export const Matches = ({ user }) => {
   }, [filter, matches, liveMatches, upcomingMatches, completedMatches]);
 
   const FILTERS = [
-    { id: 'all', label: 'All Matches', count: matches.length },
-    { id: 'live', label: 'Live Now', count: liveMatches.length, isLive: true },
-    { id: 'upcoming', label: 'Upcoming', count: upcomingMatches.length },
-    { id: 'completed', label: 'Completed', count: completedMatches.length },
+    { id: 'all', label: 'All Matches', count: matches.length, icon: 'cricket' },
+    { id: 'live', label: 'Live Now', count: liveMatches.length, isLive: true, icon: 'zap' },
+    { id: 'upcoming', label: 'Upcoming', count: upcomingMatches.length, icon: 'calendar' },
+    { id: 'completed', label: 'Completed', count: completedMatches.length, icon: 'trophy' },
   ];
 
   return (
@@ -174,39 +187,48 @@ export const Matches = ({ user }) => {
                   LIVE NOW
                 </>
               ) : (
-                '🏏 FEATURED'
+                <>
+                  <Icon name="trophy" size={13} color="white" />
+                  <span>FEATURED MATCH</span>
+                </>
               )}
             </span>
             {featuredMatch.venue && (
-              <span>{featuredMatch.venue}</span>
+              <span className="hero-venue-tag">
+                <Icon name="mappin" size={13} /> {featuredMatch.venue}
+              </span>
             )}
           </div>
 
           <div className="hero-teams-grid">
-            <div>
+            <div className="hero-team-side">
               <div className="hero-team-name">{featuredMatch.teamA}</div>
-              <div className={`hero-team-score${featuredMatch.matchStarted && !featuredMatch.matchEnded && featuredMatch.scoreA ? ' live-batting' : ''}`}>
-                <ScoreDisplay score={featuredMatch.scoreA} size="xl" />
+              <div className={`hero-team-score ${featuredMatch.matchStarted && !featuredMatch.matchEnded && !featuredMatch.scoreB ? 'live-batting' : ''}`}>
+                <ScoreDisplay score={featuredMatch.scoreA} size="hero" />
               </div>
             </div>
+
             <div className="hero-vs-badge">VS</div>
-            <div style={{ textAlign: 'right' }}>
+
+            <div className="hero-team-side is-right">
               <div className="hero-team-name">{featuredMatch.teamB}</div>
-              <div className={`hero-team-score${featuredMatch.matchStarted && !featuredMatch.matchEnded ? ' live-batting' : ''}`}>
-                <ScoreDisplay score={featuredMatch.scoreB} size="xl" highlight={featuredMatch.matchStarted && !featuredMatch.matchEnded} />
+              <div className={`hero-team-score ${featuredMatch.matchStarted && !featuredMatch.matchEnded && !!featuredMatch.scoreB ? 'live-batting' : ''}`}>
+                <ScoreDisplay score={featuredMatch.scoreB} size="hero" highlight={featuredMatch.matchStarted && !featuredMatch.matchEnded} />
               </div>
             </div>
           </div>
 
           <div className="hero-footer">
             <div className="hero-status-text">
-              ⚡ {featuredMatch.status || (featuredMatch.matchStarted ? 'Live Match in Progress' : 'Upcoming Match')}
+              <Icon name="bolt" size={14} color="#60a5fa" />
+              <span>{featuredMatch.status || (featuredMatch.matchStarted ? 'Live Match in Progress' : 'Upcoming Fixture')}</span>
             </div>
             <Link
               to={`/match-center/${featuredMatch.matchId || featuredMatch._id}`}
               className="hero-cta-btn"
             >
-              {featuredMatch.matchStarted && !featuredMatch.matchEnded ? 'Watch Live Center' : 'View Match'} →
+              <span>{featuredMatch.matchStarted && !featuredMatch.matchEnded ? 'Watch Live Center' : 'View Match Center'}</span>
+              <Icon name="arrow-right" size={14} />
             </Link>
           </div>
         </div>
@@ -214,14 +236,15 @@ export const Matches = ({ user }) => {
 
       {/* Filter Segment Control */}
       <div className="filter-segment">
-        {FILTERS.map(({ id, label, count, isLive: liveTab }) => (
+        {FILTERS.map(({ id, label, count, isLive: liveTab, icon }) => (
           <button
             key={id}
-            className={`segment-btn${filter === id ? (liveTab ? ' active live-tab' : ' active') : ''}`}
+            className={`segment-btn ${filter === id ? (liveTab ? 'active live-tab' : 'active') : ''}`}
             onClick={() => setFilter(id)}
           >
+            <Icon name={icon} size={14} />
             {liveTab && filter === id && <span className="live-dot" />}
-            {label}
+            <span>{label}</span>
             <span className="segment-count">{count}</span>
           </button>
         ))}
@@ -230,15 +253,16 @@ export const Matches = ({ user }) => {
       {/* Matches Grid */}
       {loading ? (
         <div className="matches-grid">
-          {[1, 2, 3].map((i) => <CardSkeleton key={i} />)}
+          {[1, 2, 3, 4].map((i) => <CardSkeleton key={i} />)}
         </div>
       ) : filter === 'all' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
           {liveMatches.length > 0 && (
             <div>
               <div className="section-band live">
                 <span className="section-band-dot live" />
-                Live Matches ({liveMatches.length})
+                <Icon name="zap" size={15} color="var(--color-live)" />
+                <span>Live Matches ({liveMatches.length})</span>
               </div>
               <div className="matches-grid">
                 {liveMatches.map((m) => <MatchCard key={m.matchId || m._id} match={m} />)}
@@ -248,8 +272,8 @@ export const Matches = ({ user }) => {
           {upcomingMatches.length > 0 && (
             <div>
               <div className="section-band">
-                <span className="section-band-dot" style={{ background: 'var(--text-secondary)' }} />
-                Upcoming ({upcomingMatches.length})
+                <Icon name="calendar" size={15} color="var(--text-secondary)" />
+                <span>Upcoming Matches ({upcomingMatches.length})</span>
               </div>
               <div className="matches-grid">
                 {upcomingMatches.map((m) => <MatchCard key={m.matchId || m._id} match={m} />)}
@@ -259,8 +283,8 @@ export const Matches = ({ user }) => {
           {completedMatches.length > 0 && (
             <div>
               <div className="section-band">
-                <span className="section-band-dot" style={{ background: 'var(--text-muted)' }} />
-                Recent Results ({completedMatches.length})
+                <Icon name="trophy" size={15} color="var(--text-muted)" />
+                <span>Recent Results ({completedMatches.length})</span>
               </div>
               <div className="matches-grid">
                 {completedMatches.map((m) => <MatchCard key={m.matchId || m._id} match={m} />)}
@@ -269,8 +293,10 @@ export const Matches = ({ user }) => {
           )}
           {matches.length === 0 && (
             <div className="empty-state">
-              <div className="empty-state-icon">🏏</div>
-              <div className="empty-state-title">No matches available</div>
+              <div className="empty-state-icon">
+                <Icon name="cricket" size={40} color="var(--color-primary)" />
+              </div>
+              <div className="empty-state-title">No Matches Available</div>
               <div className="empty-state-desc">Check back soon for upcoming tournaments and live fixtures.</div>
             </div>
           )}
@@ -281,7 +307,9 @@ export const Matches = ({ user }) => {
             filteredMatches.map((m) => <MatchCard key={m.matchId || m._id} match={m} />)
           ) : (
             <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
-              <div className="empty-state-icon">🏏</div>
+              <div className="empty-state-icon">
+                <Icon name="cricket" size={36} color="var(--text-muted)" />
+              </div>
               <div className="empty-state-title">No {filter} matches</div>
               <div className="empty-state-desc">Check back soon for updates.</div>
             </div>

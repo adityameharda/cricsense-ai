@@ -4,7 +4,6 @@ import axios from 'axios';
 import socket from '../socket';
 import Icon from './common/Icons';
 
-const RANK_MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 const ROLE_LABELS = { wk: 'WK', bat: 'BAT', ar: 'AR', bowl: 'BOWL' };
 
 const getPlayerRole = (name = '') => {
@@ -55,7 +54,7 @@ const Leaderboard = ({ user }) => {
         const resMatch = await axios.get(`http://localhost:5000/api/matches/${matchId}`);
         setMatch(resMatch.data);
       } catch (err) {
-        console.error('⚠️ Leaderboard fetch error:', err.message);
+        console.error('Leaderboard fetch error:', err.message);
       } finally {
         setLoading(false);
       }
@@ -84,29 +83,32 @@ const Leaderboard = ({ user }) => {
 
   const top3 = leaderboard.slice(0, 3);
 
+  const getRankBadge = (rank) => {
+    if (rank === 1) return <span className="medal-pill gold"><Icon name="crown" size={13} /> 1st</span>;
+    if (rank === 2) return <span className="medal-pill silver"><Icon name="award" size={13} /> 2nd</span>;
+    if (rank === 3) return <span className="medal-pill bronze"><Icon name="medal" size={13} /> 3rd</span>;
+    return <span className="medal-pill default">#{rank}</span>;
+  };
+
   return (
     <div className="leaderboard-page animate-fade-up">
-      {/* Top Bar with Prominent Back Buttons */}
+      {/* Top Bar Navigation */}
       <div className="page-top-bar">
         <Link to={`/match-center/${matchId}`} className="top-back-btn" id="leaderboard-back-btn">
-          <span className="back-arrow">←</span>
+          <Icon name="arrow-left" size={14} />
           <span>Back to Match Details</span>
         </Link>
         <Link to="/" className="top-back-btn-sub">
-          Home
+          <Icon name="cricket" size={13} />
+          <span>All Matches</span>
         </Link>
       </div>
 
       {/* Success Toast */}
       {toast && (
-        <div style={{
-          position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)',
-          background: 'var(--color-live)', color: '#fff', fontWeight: 700,
-          padding: '12px 24px', borderRadius: 12, zIndex: 9999,
-          boxShadow: '0 4px 20px rgba(5,150,105,0.35)', fontSize: 14,
-          animation: 'fadeIn 0.3s ease'
-        }}>
-          {toast}
+        <div className="toast-success animate-fade-up">
+          <Icon name="check-circle" size={18} color="white" />
+          <span>{toast}</span>
         </div>
       )}
 
@@ -118,117 +120,77 @@ const Leaderboard = ({ user }) => {
               <div className="lb-team-name">{match.teamA}</div>
               <div className="lb-team-score">{match.scoreA || '—'}</div>
             </div>
-            <div className="lb-vs">VS</div>
-            <div className="lb-team-block" style={{ textAlign: 'right' }}>
+            <div className="lb-vs-badge">VS</div>
+            <div className="lb-team-block is-right">
               <div className="lb-team-name">{match.teamB}</div>
               <div className="lb-team-score">{match.scoreB || '—'}</div>
             </div>
           </div>
-          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {isLive ? (
-                <span className="status-pill live">
-                  <span className="live-dot" /> Live Match
-                </span>
-              ) : match.matchEnded ? (
-                <span className="status-pill final">Concluded</span>
-              ) : (
-                <span className="status-pill upcoming">Upcoming Match</span>
-              )}
-              {match.venue && (
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>📍 {match.venue}</span>
-              )}
+
+          <div className="lb-status-bar">
+            <div className="lb-status-text">
+              <Icon name="activity" size={14} color="var(--color-primary)" />
+              <span>{match.status || (isLive ? 'Live leaderboard scoring in real-time' : 'Final rankings verified')}</span>
             </div>
-            <Link
-              to={`/build-team/${matchId}${contestId !== 'general' ? `?contestId=${contestId}` : ''}`}
-              className="top-back-btn"
-              style={{ padding: '6px 14px', fontSize: 12 }}
-            >
-              ✏️ Edit / Build Team
-            </Link>
+            {isLive && (
+              <span className="live-status-pill">
+                <span className="live-dot" /> LIVE SCORING
+              </span>
+            )}
           </div>
         </div>
       )}
 
-      {/* Private Room Share Banner */}
-      {contestId !== 'general' && (
-        <div className="contest-summary-card" style={{ padding: '12px 18px', background: '#f0fdf4', borderColor: '#86efac' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 20 }}>🔐</span>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#166534', textTransform: 'uppercase' }}>Secret League Invite Code</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 16, fontWeight: 900, color: '#14532d', letterSpacing: '0.08em' }}>{contestId}</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(contestId);
-                alert(`✓ Room Code "${contestId}" copied to clipboard!`);
-              }}
-              className="contest-code-copy-btn"
-              style={{ background: '#16a34a' }}
-            >
-              📋 Copy Code
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/build-team/${matchId}?contestId=${contestId}`);
-                alert('✓ Direct Invite Link copied to clipboard!');
-              }}
-              className="top-back-btn"
-              style={{ fontSize: 12, padding: '4px 12px', background: '#ffffff' }}
-            >
-              🔗 Copy Invite Link
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* HLD Metric Strip */}
+      {/* HLD Metrics Strip */}
       <div className="hld-metrics-grid">
-        <div className="hld-metric-card">
-          <div className="hld-metric-lbl">🥇 Leader Score</div>
-          <div className="hld-metric-val highlight">{topScore > 0 ? `${topScore.toFixed(1)} pts` : '0.0 pts'}</div>
+        <div className="hld-metric-box">
+          <div className="hld-metric-label">Total Fantasy Teams</div>
+          <div className="hld-metric-value">{totalTeamsCount}</div>
         </div>
-        <div className="hld-metric-card">
-          <div className="hld-metric-lbl">👥 Total Squads</div>
-          <div className="hld-metric-val">{totalTeamsCount} Teams</div>
+        <div className="hld-metric-box">
+          <div className="hld-metric-label">Leader Score</div>
+          <div className="hld-metric-value leader-score">{topScore} <span style={{ fontSize: 13, fontWeight: 600 }}>pts</span></div>
         </div>
-        <div className="hld-metric-card">
-          <div className="hld-metric-lbl">📊 Average Score</div>
-          <div className="hld-metric-val">{avgScore} pts</div>
+        <div className="hld-metric-box">
+          <div className="hld-metric-label">Average Score</div>
+          <div className="hld-metric-value">{avgScore} <span style={{ fontSize: 13, fontWeight: 600 }}>pts</span></div>
         </div>
-        <div className="hld-metric-card">
-          <div className="hld-metric-lbl">⚡ Multipliers</div>
-          <div className="hld-metric-val" style={{ fontSize: 13, color: 'var(--color-primary)' }}>
-            C: 2.0× · VC: 1.5×
+        <div className="hld-metric-box">
+          <div className="hld-metric-label">Contest Type</div>
+          <div className="hld-metric-value" style={{ textTransform: 'capitalize', fontSize: 18 }}>
+            {contestId === 'general' ? 'Public Arena' : `Private (${contestId})`}
           </div>
         </div>
       </div>
 
-      {/* Top 3 Podium Showcase */}
+      {/* Top 3 Podium Cards */}
       {top3.length > 0 && (
-        <div className="hld-podium-section">
-          <div className="hld-podium-grid">
-            {top3.map((team, idx) => {
+        <div>
+          <div className="podium-section-title">
+            <Icon name="trophy" size={18} color="var(--color-primary)" />
+            <span>Leaderboard Podium</span>
+          </div>
+
+          <div className="podium-grid">
+            {top3.map((entry, idx) => {
               const rank = idx + 1;
-              const uname = team.userId?.username || team.userId || 'Player';
+              const isCurrentUser = user && (entry.user?._id === user.id || entry.user?.username === user.username);
+              const rankClass = rank === 1 ? 'gold-podium' : rank === 2 ? 'silver-podium' : 'bronze-podium';
+
               return (
-                <div key={team._id} className={`hld-podium-card rank-${rank}`}>
-                  <div className="hld-podium-badge">
-                    {RANK_MEDALS[rank]} Rank #{rank}
+                <div key={entry._id || idx} className={`podium-card ${rankClass} ${isCurrentUser ? 'current-user-podium' : ''}`}>
+                  <div className="podium-rank-ribbon">
+                    {getRankBadge(rank)}
                   </div>
-                  <div className="hld-podium-avatar">
-                    {uname.charAt(0).toUpperCase()}
+                  <div className="podium-avatar-circle">
+                    {entry.user?.username ? entry.user.username.slice(0, 2).toUpperCase() : 'P'}
                   </div>
-                  <div className="hld-podium-uname">{uname}</div>
-                  <div className="hld-podium-pts">{(team.totalPoints || 0).toFixed(1)} PTS</div>
-                  <div className="hld-podium-cvc">
-                    {team.captain && <span className="hld-chip-c">C: {team.captain} (2×)</span>}
-                    {team.viceCaptain && <span className="hld-chip-vc">VC: {team.viceCaptain} (1.5×)</span>}
+                  <div className="podium-username">
+                    {entry.user?.username || 'Player'}
+                    {isCurrentUser && <span className="podium-you-tag">YOU</span>}
+                  </div>
+                  <div className="podium-points-val">
+                    {entry.totalPoints || 0} <span className="pts-suffix">PTS</span>
                   </div>
                 </div>
               );
@@ -237,141 +199,111 @@ const Leaderboard = ({ user }) => {
         </div>
       )}
 
-      {/* Main Leaderboard Table */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <h1 className="leaderboard-title" style={{ fontSize: 20 }}>
-            {contestId === 'general' ? '🌍 Global Live Standings' : `🏆 Private League: ${contestId}`}
-          </h1>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
-            Tap row to reveal 11-player squad
+      {/* Complete Standings Table */}
+      <div className="standings-card">
+        <div className="standings-header">
+          <div className="standings-title">
+            <Icon name="award" size={16} color="var(--color-primary)" />
+            <span>Full Standings ({leaderboard.length})</span>
+          </div>
+          <span className="standings-auto-refresh">
+            <Icon name="refresh" size={12} /> Auto-Sync Active
           </span>
         </div>
 
         {loading ? (
+          <div className="app-loading" style={{ minHeight: 180 }}>
+            <div className="spinner" />
+            <span>Computing rankings…</span>
+          </div>
+        ) : leaderboard.length === 0 ? (
           <div className="empty-state">
-            <div className="spinner" style={{ margin: '0 auto' }} />
+            <div className="empty-state-icon">
+              <Icon name="users" size={36} color="var(--color-primary)" />
+            </div>
+            <div className="empty-state-title">No Fantasy Squads Yet</div>
+            <div className="empty-state-desc">Build your 11-player squad to appear on the leaderboard.</div>
+            {!match?.matchStarted && (
+              <Link to={`/build-team/${matchId}`} className="top-back-btn" style={{ marginTop: 14 }}>
+                <Icon name="cricket" size={14} />
+                <span>Build Fantasy Squad</span>
+              </Link>
+            )}
           </div>
         ) : (
-          <div
-            style={{
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-xl)',
-              boxShadow: 'var(--shadow-sm)',
-              overflow: 'hidden',
-            }}
-          >
-            <div className="lb-table-wrap">
-              <table className="lb-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: 70 }}>Rank</th>
-                    <th>Manager / Squad</th>
-                    <th>Captain (2×) & VC (1.5×)</th>
-                    <th style={{ textAlign: 'right' }}>Total Points</th>
-                    <th style={{ width: 40 }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leaderboard.length === 0 ? (
-                    <tr>
-                      <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                        No fantasy teams submitted yet! Be the first to build your dream 11.
-                      </td>
-                    </tr>
-                  ) : (
-                    leaderboard.map((team, index) => {
-                      const rank = index + 1;
-                      const isExpanded = expandedTeam === team._id;
-                      const uname = team.userId?.username || team.userId || 'Unknown';
-                      return (
-                        <React.Fragment key={team._id}>
-                          <tr
-                            className={isExpanded ? 'expanded' : ''}
-                            onClick={() =>
-                              setExpandedTeam(isExpanded ? null : team._id)
-                            }
-                            style={{ cursor: 'pointer' }}
-                          >
-                            <td className="lb-rank-cell">
-                              {RANK_MEDALS[rank] ? (
-                                <div className={`lb-rank-medal lb-rank-${rank}`}>
-                                  {RANK_MEDALS[rank]}
-                                </div>
-                              ) : (
-                                `#${rank}`
-                              )}
-                            </td>
-                            <td className="lb-user-cell">
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <div className="user-avatar-circle" style={{ width: 26, height: 26, fontSize: 11 }}>
-                                  {uname.charAt(0).toUpperCase()}
-                                </div>
-                                <span style={{ fontWeight: 700 }}>{uname}</span>
+          <div className="standings-list">
+            {leaderboard.map((entry, index) => {
+              const rank = index + 1;
+              const isExpanded = expandedTeam === (entry._id || index);
+              const isCurrentUser = user && (entry.user?._id === user.id || entry.user?.username === user.username);
+
+              return (
+                <div key={entry._id || index} className={`standing-item-card ${isCurrentUser ? 'is-current-user' : ''}`}>
+                  <div
+                    className="standing-row-bar"
+                    onClick={() => setExpandedTeam(isExpanded ? null : (entry._id || index))}
+                  >
+                    <div className="standing-rank-cell">
+                      {getRankBadge(rank)}
+                    </div>
+                    <div className="standing-user-cell">
+                      <div className="standing-avatar-mini">
+                        {entry.user?.username ? entry.user.username.charAt(0).toUpperCase() : 'P'}
+                      </div>
+                      <div>
+                        <div className="standing-username-text">
+                          {entry.user?.username || 'Player'}
+                          {isCurrentUser && <span className="you-pill-mini">YOU</span>}
+                        </div>
+                        <div className="standing-captain-sub">
+                          C: <strong>{entry.captain || '—'}</strong> | VC: <strong>{entry.viceCaptain || '—'}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="standing-points-cell">
+                      <span className="standing-pts-num">{entry.totalPoints || 0}</span>
+                      <span className="standing-pts-lbl">pts</span>
+                    </div>
+
+                    <button className="standing-expand-toggle" aria-label="Toggle squad breakdown">
+                      <Icon name={isExpanded ? "chevron-left" : "chevron-right"} size={14} style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
+                    </button>
+                  </div>
+
+                  {/* Expanded Squad Breakdown */}
+                  {isExpanded && (
+                    <div className="standing-expanded-squad animate-fade-up">
+                      <div className="expanded-squad-title">
+                        <Icon name="users" size={14} color="var(--color-primary)" />
+                        <span>Squad Performance Breakdown</span>
+                      </div>
+                      <div className="expanded-players-grid">
+                        {(entry.players || []).map((p, pIdx) => {
+                          const pName = typeof p === 'object' ? (p.name || '') : String(p || '');
+                          const isCap = pName === entry.captain;
+                          const isVCap = pName === entry.viceCaptain;
+                          const role = getPlayerRole(pName);
+
+                          return (
+                            <div key={pIdx} className={`squad-player-micro-card ${isCap ? 'is-c' : isVCap ? 'is-vc' : ''}`}>
+                              <div className="micro-card-name-row">
+                                <span className="micro-player-name">{pName}</span>
+                                <span className={`role-chip ${role}`}>{ROLE_LABELS[role]}</span>
                               </div>
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                {team.captain && (
-                                  <span className="lb-reveal-chip is-c" style={{ fontSize: 11 }}>
-                                    © {team.captain} (2×)
-                                  </span>
-                                )}
-                                {team.viceCaptain && (
-                                  <span className="lb-reveal-chip is-vc" style={{ fontSize: 11 }}>
-                                    Ⓥ {team.viceCaptain} (1.5×)
-                                  </span>
-                                )}
+                              <div className="micro-multiplier-row">
+                                {isCap && <span className="multiplier-badge cap">2x Captain</span>}
+                                {isVCap && <span className="multiplier-badge vcap">1.5x VC</span>}
                               </div>
-                            </td>
-                            <td
-                              className="lb-points-cell"
-                              style={{ textAlign: 'right', fontWeight: 800, color: 'var(--color-primary)' }}
-                            >
-                              {(team.totalPoints || 0).toFixed(1)} pts
-                            </td>
-                            <td className="lb-expand-cell" style={{ textAlign: 'center' }}>
-                              {isExpanded ? '▲' : '▼'}
-                            </td>
-                          </tr>
-                          {isExpanded && (
-                            <tr className="lb-team-reveal-row">
-                              <td colSpan="5">
-                                <div style={{ marginBottom: 10, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                  📋 11-Player Selected Roster
-                                </div>
-                                <div className="lb-reveal-grid">
-                                  {(team.players || []).map((p) => {
-                                    const isC = p === team.captain;
-                                    const isVC = p === team.viceCaptain;
-                                    const role = getPlayerRole(p);
-                                    return (
-                                      <span
-                                        key={p}
-                                        className={`lb-reveal-chip${isC ? ' is-c' : isVC ? ' is-vc' : ''}`}
-                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px' }}
-                                      >
-                                        <span className={`role-chip ${role}`} style={{ fontSize: 9, padding: '1px 5px' }}>
-                                          {ROLE_LABELS[role]}
-                                        </span>
-                                        <span style={{ fontWeight: isC || isVC ? 800 : 500 }}>{p}</span>
-                                        {isC && <strong style={{ color: '#2563eb' }}> (2× C)</strong>}
-                                        {isVC && <strong style={{ color: '#059669' }}> (1.5× VC)</strong>}
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -380,4 +312,3 @@ const Leaderboard = ({ user }) => {
 };
 
 export default Leaderboard;
-

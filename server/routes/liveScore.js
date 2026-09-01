@@ -1,39 +1,19 @@
 const express = require('express');
-const axios = require('axios');
+const cricketService = require('../services/cricketLiveService');
 
 const router = express.Router();
 
-const CRICAPI_KEY = process.env.CRICAPI_KEY;
-const CRICAPI_URL = 'https://api.cricapi.com/v1/currentMatches';
-
-let cachedData = null;
-let lastFetchTime = 0;
-
-// Fetch live match data every 90 seconds (not 5 — free CricAPI plan only allows 100 hits/day)
-const fetchLiveData = async () => {
+// Route to get authentic live match data
+router.get('/live-score', async (req, res) => {
   try {
-    const now = Date.now();
-    if (now - lastFetchTime > 90000) {
-      const response = await axios.get(CRICAPI_URL, {
-        params: { apikey: CRICAPI_KEY },
-      });
-      cachedData = response.data;
-      lastFetchTime = now;
-    }
+    const matches = await cricketService.fetchAllRealMatches();
+    res.json({
+      status: 'success',
+      data: matches
+    });
   } catch (error) {
-    console.error('Error fetching live data:', error.message);
-  }
-};
-
-// Start fetching data in the background
-setInterval(fetchLiveData, 90000);
-
-// Route to get cached live data
-router.get('/live-score', (req, res) => {
-  if (cachedData) {
-    res.json(cachedData);
-  } else {
-    res.status(503).json({ message: 'Live data not available yet' });
+    console.error('Error fetching live score:', error.message);
+    res.status(500).json({ status: 'failure', message: 'Live data temporarily unavailable' });
   }
 });
 

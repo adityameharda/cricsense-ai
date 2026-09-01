@@ -4,9 +4,26 @@ import axios from 'axios';
 import io from 'socket.io-client';
 import Icon from './common/Icons';
 import OverStrip from './common/OverStrip';
-import ScoreDisplay from './common/ScoreDisplay';
+import ScoreDisplay, { cleanCricketOvers } from './common/ScoreDisplay';
+import { formatToIST } from '../utils/formatTime';
 
 const socket = io.connect('http://localhost:5000');
+
+const FLAG_MAP = {
+  'india': 'in', 'australia': 'au', 'england': 'gb-eng', 'south africa': 'za',
+  'new zealand': 'nz', 'pakistan': 'pk', 'bangladesh': 'bd', 'sri lanka': 'lk',
+  'west indies': 'jm', 'afghanistan': 'af', 'ireland': 'ie', 'zimbabwe': 'zw',
+  'netherlands': 'nl', 'scotland': 'gb-sct', 'uae': 'ae', 'usa': 'us',
+  'namibia': 'na', 'nepal': 'np', 'canada': 'ca', 'malaysia': 'my',
+  'belgium': 'be', 'luxembourg': 'lu', 'tanzania': 'tz', 'uganda': 'ug',
+};
+
+const getFlagUrl = (teamName) => {
+  if (!teamName) return null;
+  const name = teamName.toLowerCase().replace(/ women| u19| a$/g, '').trim();
+  const code = FLAG_MAP[name];
+  return code ? `https://flagcdn.com/32x24/${code}.png` : null;
+};
 
 export const MatchDetails = ({ user }) => {
   const { matchId } = useParams();
@@ -47,26 +64,47 @@ export const MatchDetails = ({ user }) => {
     };
   }, [matchId]);
 
-  // Fetch scorecard on demand
+  // Fetch authentic scorecard immediately and whenever scorecard tab is active
   useEffect(() => {
-    if (activeTab !== 'scorecard' || !match || scorecard) return;
+    if (!matchId) return;
+
     const fetchScorecard = async () => {
       setScorecardLoading(true);
       try {
         const res = await axios.get(`http://localhost:5000/api/matches/${matchId}/scorecard`);
         setScorecard(res.data);
       } catch (err) {
-        setScorecard({ available: false });
+        setScorecard({ available: false, innings: [] });
       } finally {
         setScorecardLoading(false);
       }
     };
+
     fetchScorecard();
-  }, [activeTab, match, matchId, scorecard]);
+  }, [matchId, activeTab]);
+
+  // Live polling for in-progress matches to keep Cockpit & Scorecard live
+  useEffect(() => {
+    const isLiveMatch = match?.matchStarted && !match?.matchEnded;
+    if (!matchId || !isLiveMatch) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get(`http://localhost:5000/api/matches/${matchId}/scorecard`);
+        if (res.data) {
+          setScorecard(res.data);
+        }
+      } catch (e) {
+        // silent fail on poll
+      }
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [matchId, match?.matchStarted, match?.matchEnded]);
 
   // Fetch squad on demand
   useEffect(() => {
-    if (activeTab !== 'squads' || !match || realSquad) return;
+    if (activeTab !== 'squads' || !matchId || realSquad) return;
     const fetchSquad = async () => {
       try {
         const res = await axios.get(`http://localhost:5000/api/matches/${matchId}/squad`);
@@ -76,472 +114,957 @@ export const MatchDetails = ({ user }) => {
       }
     };
     fetchSquad();
-  }, [activeTab, match, matchId, realSquad]);
+  }, [activeTab, matchId, realSquad]);
+
+  const isLive = match?.matchStarted && !match?.matchEnded;
+  const isEnded = match?.matchEnded;
+
+  const flagA = match?.teamALogo || getFlagUrl(match?.teamA);
+  const flagB = match?.teamBLogo || getFlagUrl(match?.teamB);
+
+  const squadAList = realSquad?.squadA?.length > 0 ? realSquad.squadA : (match?.squadA || []);
+  const squadBList = realSquad?.squadB?.length > 0 ? realSquad.squadB : (match?.squadB || []);
+
+  // Display authentic innings strictly from live/completed scorecard data
+  const displayInnings = useMemo(() => {
+    if (scorecard?.innings && Array.isArray(scorecard.innings) && scorecard.innings.length > 0) {
+      return scorecard.innings;
+    }
+    return [];
+  }, [scorecard]);
 
   if (loading) {
     return (
-      <div className="app-loading" style={{ minHeight: 300 }}>
+      <div className="app-loading" style={{ minHeight: 360 }}>
         <div className="spinner" />
-        <span>Connecting to Match Stream…</span>
+        <span>Connecting to Match Telemetry Stream…</span>
       </div>
     );
   }
 
   if (error || !match) {
     return (
-      <div className="empty-state" style={{ maxWidth: 420, margin: '40px auto' }}>
-        <div className="empty-state-icon">🏏</div>
+      <div className="empty-state" style={{ maxWidth: 460, margin: '40px auto' }}>
+        <div className="empty-state-icon">
+          <Icon name="cricket" size={40} color="var(--color-primary)" />
+        </div>
         <div className="empty-state-title">Match Not Found</div>
-        <div className="empty-state-desc">{error || 'This match fixture is not available.'}</div>
-        <Link
-          to="/"
-          style={{
-            display: 'inline-block',
-            marginTop: 16,
-            padding: '8px 20px',
-            background: 'var(--color-primary)',
-            color: 'white',
-            borderRadius: 'var(--radius-md)',
-            fontWeight: 700,
-            fontSize: 13,
-            textDecoration: 'none',
-          }}
-        >
-          Return to Matches
+        <div className="empty-state-desc">{error || 'This match fixture is currently unavailable.'}</div>
+        <Link to="/" className="top-back-btn" style={{ marginTop: 16 }}>
+          <Icon name="arrow-left" size={14} />
+          <span>Return to Matches</span>
         </Link>
       </div>
     );
   }
 
-  const isLive = match.matchStarted && !match.matchEnded;
-  const isEnded = match.matchEnded;
-
   const computeCRR = (scoreStr) => {
     if (typeof scoreStr !== 'string') return '0.00';
-    const m = scoreStr.match(/(\d+)\/\d+\s*\(([\d.]+)\)/);
+    const cleaned = cleanCricketOvers(scoreStr);
+    const m = cleaned.match(/(\d+)\/\d+\s*\(([\d.]+)\)/);
     if (m) {
       const runs = parseFloat(m[1]);
-      const overs = parseFloat(m[2]);
+      let overs = parseFloat(m[2]);
       if (overs > 0) return (runs / overs).toFixed(2);
     }
     return '0.00';
   };
 
-  const computeSR = (runs, balls) => (balls > 0 ? ((runs / balls) * 100).toFixed(1) : '0.0');
-
-  const getPlayerRole = (idx, name = '') => {
-    const n = name.toLowerCase();
-    if (n.includes('(wk)') || n.includes('buttler') || n.includes('rizwan') || n.includes('pant') || n.includes('samson') || n.includes('carey') || n.includes('de kock') || n.includes('klaasen') || n.includes('bairstow') || n.includes('gurbaz') || n.includes('poorran') || n.includes('hope')) {
-      return 'wk';
-    }
-    if (n.includes('kohli') || n.includes('sharma') || n.includes('babar') || n.includes('root') || n.includes('smith') || n.includes('head') || n.includes('warner') || n.includes('gill') || n.includes('williamson') || n.includes('surya') || n.includes('gaikwad') || n.includes('jaiswal')) {
-      return 'bat';
-    }
-    if (n.includes('stokes') || n.includes('pandya') || n.includes('jadeja') || n.includes('maxwell') || n.includes('rashid') || n.includes('shadab') || n.includes('marsh') || n.includes('shakib') || n.includes('santner') || n.includes('russell') || n.includes('narine')) {
-      return 'ar';
-    }
-    if (n.includes('bumrah') || n.includes('shami') || n.includes('starc') || n.includes('cummins') || n.includes('afridi') || n.includes('rabada') || n.includes('boult') || n.includes('chahal') || n.includes('kuldeep') || n.includes('siraj') || n.includes('wood') || n.includes('archer') || n.includes('nortje')) {
-      return 'bowl';
-    }
-    // General distribution if unknown
-    if (idx < 5) return 'bat';
-    if (idx < 8) return 'ar';
-    return 'bowl';
-  };
+  const computeSR = (runs, balls) => (balls > 0 ? ((runs / balls) * 100).toFixed(2) : '0.00');
 
   const ROLE_LABELS = { wk: 'WK', bat: 'BAT', ar: 'AR', bowl: 'BOWL' };
 
-  const squadAList = realSquad?.squadA?.length > 0 ? realSquad.squadA : (match.squadA || []);
-  const squadBList = realSquad?.squadB?.length > 0 ? realSquad.squadB : (match.squadB || []);
-
-  const hasLiveData = match.striker || match.nonStriker || match.bowler;
+  // Extract live telemetry from miniscore or match record
+  const liveTelemetry = scorecard?.miniscore || match?.miniscore || null;
+  const hasLiveTelemetry = !!(liveTelemetry?.striker || liveTelemetry?.bowler || match?.striker || match?.bowler);
 
   const TABS = [
-    { id: 'live', label: 'Live Cockpit', icon: '●' },
-    { id: 'scorecard', label: 'Scorecard', icon: '📊' },
-    { id: 'squads', label: 'Squads', icon: '👥' },
-    { id: 'info', label: 'Match Info', icon: 'ℹ' },
+    { id: 'live', label: 'Live Cockpit', icon: 'zap' },
+    { id: 'scorecard', label: 'Scorecard', icon: 'activity' },
+    { id: 'squads', label: 'Squads', icon: 'users' },
+    { id: 'info', label: 'Match Info', icon: 'info' },
   ];
+
+  // Helper for Strike Rate Badge styling
+  const getSRBadge = (srNum) => {
+    const sr = parseFloat(srNum);
+    if (isNaN(sr)) return null;
+    if (sr >= 200) return <span className="sr-badge sr-fire" title="Aggressive Strike Rate"><Icon name="flame" size={11} /> {sr}</span>;
+    if (sr >= 150) return <span className="sr-badge sr-high" title="High Strike Rate"><Icon name="zap" size={11} /> {sr}</span>;
+    if (sr >= 100) return <span className="sr-badge sr-normal">{sr}</span>;
+    return <span className="sr-badge sr-low">{sr}</span>;
+  };
+
+  // Helper for Economy Rate Badge styling
+  const getEconBadge = (econNum) => {
+    const eco = parseFloat(econNum);
+    if (isNaN(eco) || eco === 0) return <span className="econ-badge econ-normal">{econNum || '—'}</span>;
+    if (eco < 6.0) return <span className="econ-badge econ-great" title="Exceptional Economy">{econNum}</span>;
+    if (eco <= 8.5) return <span className="econ-badge econ-normal">{econNum}</span>;
+    return <span className="econ-badge econ-high">{econNum}</span>;
+  };
+
+  // Helper for Player Roles in squad roster
+  const getPlayerRole = (idx, playerName = '') => {
+    const name = playerName.toLowerCase();
+    if (name.includes('(wk)') || name.includes('wk') || idx === 2) return 'wk';
+    if (idx < 4) return 'bat';
+    if (idx < 7) return 'ar';
+    return 'bowl';
+  };
+
+  // Helper for rendering recent ball-by-ball deliveries with prominent red Wicket badges
+  const renderRecentDeliveries = (recentStr) => {
+    if (!recentStr || typeof recentStr !== 'string') {
+      return <OverStrip balls={['1', '•', '4', 'W', '6', '1']} label="Recent" />;
+    }
+    const tokens = recentStr.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return null;
+
+    return (
+      <div className="over-strip-container">
+        <span className="over-strip-label">Recent:</span>
+        <div className="over-strip-balls">
+          {tokens.map((token, idx) => {
+            const tUpper = token.toUpperCase();
+            if (tUpper === '|' || tUpper === '/') {
+              return (
+                <span key={idx} className="recent-ball-divider" style={{ color: '#cbd5e1', fontWeight: 800, margin: '0 3px' }}>
+                  |
+                </span>
+              );
+            }
+            const isWicket = tUpper === 'W' || tUpper.startsWith('W') || tUpper.includes('WKT') || tUpper.includes('OUT');
+            const isFour = tUpper === '4';
+            const isSix = tUpper === '6';
+            const isDot = tUpper === '0' || tUpper === '•' || tUpper === '.' || tUpper === '-';
+
+            let chipClass = 'ball-chip-run';
+            if (isWicket) chipClass = 'ball-chip-wicket';
+            else if (isSix) chipClass = 'ball-chip-six';
+            else if (isFour) chipClass = 'ball-chip-four';
+            else if (isDot) chipClass = 'ball-chip-dot';
+
+            return (
+              <div
+                key={idx}
+                className={`ball-chip ${chipClass}`}
+                title={isWicket ? 'Wicket Dismissal' : `Ball ${idx + 1}: ${token}`}
+              >
+                {isDot ? '•' : isWicket ? 'W' : token}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const displayStatus = formatToIST(match.status);
 
   return (
     <div className="match-details-page animate-fade-up">
-      {/* Top Bar Navigation with Prominent Back Button */}
+      {/* Top Bar Navigation */}
       <div className="page-top-bar">
         <Link to="/" className="top-back-btn" id="match-details-back-btn" title="Return to all live matches">
-          <span className="back-arrow">←</span>
+          <Icon name="arrow-left" size={15} />
           <span>Back to Matches</span>
         </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="match-format-chip">
+            <Icon name="cricket" size={13} /> {match.matchType || 'T20 Match'}
+          </span>
+        </div>
       </div>
 
-      {/* Match Header Card */}
-      <div className={`match-header${isLive ? ' is-live' : ''}`}>
-        <div className="match-eyebrow">
-          <div className="match-series-label">
-            <span style={{ color: 'var(--color-primary)' }}>T20</span> · {match.teamA} vs {match.teamB}
+      {/* Match Header Hero Scoreboard Box */}
+      <div className={`match-header-hero ${isLive ? 'is-live' : ''}`}>
+        {/* Eyebrow info & status */}
+        <div className="match-hero-eyebrow">
+          <div className="match-series-info">
+            <span className="match-series-name">{match.venue || 'International Ground'}</span>
+            <span className="match-series-dot">•</span>
+            <span>{formatToIST(match.date) || 'Live Match'}</span>
           </div>
+
           {isLive ? (
-            <span className="live-badge">
+            <span className="live-status-pill">
               <span className="live-pulse-ring">
                 <span className="live-pulse-ring-outer" />
                 <span className="live-pulse-ring-inner" />
               </span>
-              LIVE
+              <span>LIVE BROADCAST</span>
             </span>
           ) : isEnded ? (
-            <span className="result-badge">
-              <Icon name="trophy" size={13} />
-              {match.status || 'Final'}
+            <span className="status-pill final">
+              <Icon name="trophy" size={12} />
+              <span>FINAL RESULT</span>
             </span>
           ) : (
-            <span className="status-pill upcoming">Upcoming</span>
+            <span className="status-pill upcoming">
+              <Icon name="clock" size={12} />
+              <span>UPCOMING FIXTURE</span>
+            </span>
           )}
         </div>
 
-        {/* Team Score Rows */}
-        <div className="team-compare-block">
-          {[
-            { team: match.teamA, score: match.scoreA, isWinner: isEnded && match.scoreA > match.scoreB },
-            { team: match.teamB, score: match.scoreB, isWinner: isEnded && match.scoreB > match.scoreA },
-          ].map(({ team, score, isWinner }) => (
-            <div key={team} className={`team-compare-row${isWinner ? ' winner' : ''}`}>
-              <div className="team-compare-left">
-                <div className="team-compare-monogram">{team?.slice(0, 2).toUpperCase()}</div>
-                <span className="team-compare-name">{team}</span>
+        {/* Dual Team Scoreboard Grid */}
+        <div className="match-hero-scoreboard">
+          {/* Team A */}
+          <div className={`hero-team-box ${isEnded && match.scoreA > match.scoreB ? 'is-winner' : ''}`}>
+            <div className="hero-team-identity">
+              {flagA ? (
+                <img src={flagA} alt={match.teamA} className="hero-team-flag" />
+              ) : (
+                <div className="hero-team-monogram">{match.teamA?.slice(0, 2).toUpperCase()}</div>
+              )}
+              <div>
+                <div className="hero-team-title">{match.teamA}</div>
+                {isLive && !match.scoreB && <span className="hero-batting-tag"><Icon name="zap" size={10} /> Batting</span>}
               </div>
-              <span className={`team-compare-score${isLive && match.scoreB && score === match.scoreB ? ' live-batting' : ''}`}>
-                <ScoreDisplay score={score} size="lg" />
-              </span>
             </div>
-          ))}
+            <div className="hero-team-score-wrap">
+              <ScoreDisplay score={match.scoreA} size="hero" highlight={isLive && !match.scoreB} />
+              {match.scoreA && match.scoreA !== '0/0 (0)' && (
+                <div className="hero-crr-label">CRR: {computeCRR(match.scoreA)}</div>
+              )}
+            </div>
+          </div>
+
+          {/* VS Divider Badge */}
+          <div className="hero-vs-column">
+            <div className="hero-vs-circle">VS</div>
+          </div>
+
+          {/* Team B */}
+          <div className={`hero-team-box ${isEnded && match.scoreB > match.scoreA ? 'is-winner' : ''} is-right`}>
+            <div className="hero-team-score-wrap is-right">
+              <ScoreDisplay score={match.scoreB} size="hero" highlight={isLive && !!match.scoreB} />
+              {match.scoreB && match.scoreB !== '0/0 (0)' && (
+                <div className="hero-crr-label">CRR: {computeCRR(match.scoreB)}</div>
+              )}
+            </div>
+            <div className="hero-team-identity is-right">
+              <div>
+                <div className="hero-team-title">{match.teamB}</div>
+                {isLive && match.scoreB && <span className="hero-batting-tag is-chasing"><Icon name="target" size={10} /> Chasing</span>}
+              </div>
+              {flagB ? (
+                <img src={flagB} alt={match.teamB} className="hero-team-flag" />
+              ) : (
+                <div className="hero-team-monogram">{match.teamB?.slice(0, 2).toUpperCase()}</div>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Meta bar */}
-        <div className="match-meta-bar">
-          {match.venue && (
-            <span className="match-meta-item">
-              <Icon name="mappin" size={13} /> {match.venue}
-            </span>
-          )}
-          {match.date && (
-            <span className="match-meta-item">
-              <Icon name="calendar" size={13} /> {match.date}
-            </span>
-          )}
-          {isLive && (
-            <span className="crr-chip">
-              CRR: {computeCRR(match.scoreB !== '0/0 (0)' ? match.scoreB : match.scoreA)}
-            </span>
-          )}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            {/* BUG 3 FIX: Only show Build Team when match hasn't started */}
+        {/* Live Equation / Result Bar */}
+        <div className="match-hero-equation-bar">
+          <div className="equation-status-text">
+            <Icon name="bolt" size={14} color="var(--color-primary)" />
+            <span>{displayStatus || (isLive ? 'Live match in progress' : 'Fixture details scheduled')}</span>
+          </div>
+
+          <div className="hero-quick-actions">
             {!match.matchStarted && !match.matchEnded && (
-              <Link to={`/build-team/${matchId}`} className="card-btn primary" style={{ textDecoration: 'none', flex: 'none' }}>
-                🏏 Build Team
+              <Link to={`/build-team/${matchId}`} className="hero-action-btn primary">
+                <Icon name="cricket" size={14} />
+                <span>Build Team</span>
               </Link>
             )}
-            <Link to={`/leaderboard/${matchId}`} className="card-btn secondary" style={{ textDecoration: 'none', flex: 'none' }}>
-              🏆 Leaderboard
+            <Link to={`/leaderboard/${matchId}`} className="hero-action-btn secondary">
+              <Icon name="trophy" size={14} />
+              <span>Leaderboard</span>
             </Link>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="details-tabs">
+      {/* Main Details Navigation Tabs */}
+      <div className="details-tabs-bar">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             id={`tab-${tab.id}`}
-            className={`details-tab-btn${activeTab === tab.id ? ' active' : ''}`}
+            className={`details-tab-btn ${activeTab === tab.id ? 'active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
           >
-            {tab.id === 'live' && isLive && (
-              <span className="live-dot" style={{ display: 'inline-block', marginRight: 2 }} />
-            )}
-            {tab.label}
+            <Icon name={tab.icon} size={15} />
+            <span>{tab.label}</span>
+            {tab.id === 'live' && isLive && <span className="live-dot" />}
           </button>
         ))}
       </div>
 
-      {/* Tab Content */}
-      <div className="details-tab-content">
+      {/* Tab Content Panels */}
+      <div className="details-tab-content-panel">
 
-        {/* ── LIVE COCKPIT ── */}
+        {/* ── 1. LIVE COCKPIT TAB (Exact Reference UI) ── */}
         {activeTab === 'live' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {hasLiveData ? (
-              <>
-                {/* Over Strip */}
-                <div className="over-strip-row">
-                  <OverStrip balls={['1', '•', '4', 'W', '6', '1']} label="Current Over" />
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 16, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
-                    {match.bowler && <span>Bowler: <strong style={{ color: 'var(--text-primary)' }}>{match.bowler}</strong></span>}
-                    {match.bowlerOvers && <span>Overs: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{match.bowlerOvers}</strong></span>}
-                  </div>
-                </div>
-
-                {/* Batters + Bowler */}
-                <div className="live-players-grid">
-                  {/* Batters Card */}
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 10 }}>
-                      Batters at Crease
+          <div className="cockpit-container">
+            {hasLiveTelemetry || isLive ? (
+              <div className="live-cockpit-box animate-fade-up">
+                {/* Live Scores & Run Rate Header */}
+                <div className="live-cockpit-header">
+                  {/* Previous Inning Score */}
+                  {match.scoreA && match.scoreA !== '0/0 (0)' && (
+                    <div className="live-scores-subline">
+                      {match.teamA}: {cleanCricketOvers(match.scoreA)}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {[
-                        { name: match.striker, runs: match.strikerRuns, balls: match.strikerBalls, onStrike: true },
-                        { name: match.nonStriker, runs: match.nonStrikerRuns, balls: match.nonStrikerBalls, onStrike: false },
-                      ].filter(b => b.name).map((batter) => (
-                        <div key={batter.name} className={`live-player-card${batter.onStrike ? ' on-strike' : ''}`}>
-                          <div className="live-player-card-header">
-                            <div className="live-player-name">
-                              {batter.onStrike && <span className="on-strike-dot" />}
-                              {batter.name}
-                              {batter.onStrike && <span className="on-strike-badge">ON STRIKE</span>}
-                            </div>
-                          </div>
-                          <div className="live-player-stats">
-                            <span className={`live-player-runs${batter.onStrike ? ' on-strike' : ''}`}>
-                              {batter.runs ?? '--'}
-                            </span>
-                            <span className="live-player-balls">({batter.balls ?? '--'}b)</span>
-                            <span className="live-player-sr">SR: {computeSR(batter.runs ?? 0, batter.balls ?? 1)}</span>
-                          </div>
-                        </div>
-                      ))}
+                  )}
+
+                  {/* Current Inning Score & Run Rates */}
+                  <div className="live-scores-mainline">
+                    <div className="live-score-big">
+                      {match.scoreB && match.scoreB !== '0/0 (0)' ? `${match.teamB} ${cleanCricketOvers(match.scoreB)}` : `${match.teamA} ${cleanCricketOvers(match.scoreA)}`}
+                    </div>
+
+                    <div className="live-crr-req-group">
+                      <span className="crr-pill">
+                        CRR: {liveTelemetry?.currentRunRate || computeCRR(match.scoreB || match.scoreA)}
+                      </span>
+                      {liveTelemetry?.requiredRunRate ? (
+                        <span className="req-pill">
+                          REQ: {liveTelemetry.requiredRunRate}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
 
-                  {/* Bowler Card */}
-                  {match.bowler && (
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 10 }}>
-                        Current Bowler
-                      </div>
-                      <div className="live-player-card">
-                        <div className="live-player-card-header">
-                          <div className="live-player-name">{match.bowler}</div>
-                          <span style={{ fontSize: 10, fontWeight: 800, background: 'var(--tint-primary)', color: 'var(--color-primary)', padding: '2px 8px', borderRadius: 'var(--radius-full)', border: '1px solid #bfdbfe' }}>
-                            SPELL
-                          </span>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center', marginTop: 8 }}>
-                          {[
-                            { label: 'O', value: match.bowlerOvers || '—' },
-                            { label: 'M', value: '0' },
-                            { label: 'R', value: match.bowlerRuns || '—' },
-                            { label: 'W', value: match.bowlerWickets || '0', isRed: true },
-                          ].map(({ label, value, isRed }) => (
-                            <div key={label}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: isRed ? 'var(--color-out)' : 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
-                              <div style={{ fontSize: 14, fontWeight: 800, fontFamily: 'var(--font-mono)', color: isRed ? 'var(--color-out)' : 'var(--text-primary)' }}>{value}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                  {/* Highlighted Match Equation */}
+                  {(liveTelemetry?.status || displayStatus) && (
+                    <div className="live-equation-text">
+                      {liveTelemetry?.status || displayStatus}
                     </div>
                   )}
                 </div>
-              </>
+
+                {/* Batters & Bowlers Live Tables */}
+                <div className="cockpit-table-section">
+                  {/* 1. Batters Table */}
+                  <div className="cockpit-table-wrapper">
+                    <table className="cockpit-table">
+                      <thead>
+                        <tr>
+                          <th>Batter</th>
+                          <th className="num-col">R</th>
+                          <th className="num-col">B</th>
+                          <th className="num-col">4s</th>
+                          <th className="num-col">6s</th>
+                          <th className="num-col">SR</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {/* Striker Row with * */}
+                        {liveTelemetry?.striker ? (
+                          <tr>
+                            <td>
+                              <span className="cockpit-player-name-link">
+                                {liveTelemetry.striker.name}
+                                <span className="strike-asterisk">*</span>
+                              </span>
+                            </td>
+                            <td className="num-col">{liveTelemetry.striker.runs ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.striker.balls ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.striker.fours ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.striker.sixes ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.striker.strikeRate ?? '0.00'}</td>
+                          </tr>
+                        ) : match.striker ? (
+                          <tr>
+                            <td>
+                              <span className="cockpit-player-name-link">
+                                {match.striker}
+                                <span className="strike-asterisk">*</span>
+                              </span>
+                            </td>
+                            <td className="num-col">{match.strikerRuns ?? 0}</td>
+                            <td className="num-col">{match.strikerBalls ?? 0}</td>
+                            <td className="num-col">0</td>
+                            <td className="num-col">0</td>
+                            <td className="num-col">{computeSR(match.strikerRuns, match.strikerBalls)}</td>
+                          </tr>
+                        ) : null}
+
+                        {/* Non-Striker Row */}
+                        {liveTelemetry?.nonStriker ? (
+                          <tr>
+                            <td>
+                              <span className="cockpit-player-name-link">
+                                {liveTelemetry.nonStriker.name}
+                              </span>
+                            </td>
+                            <td className="num-col">{liveTelemetry.nonStriker.runs ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.nonStriker.balls ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.nonStriker.fours ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.nonStriker.sixes ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.nonStriker.strikeRate ?? '0.00'}</td>
+                          </tr>
+                        ) : match.nonStriker ? (
+                          <tr>
+                            <td>
+                              <span className="cockpit-player-name-link">
+                                {match.nonStriker}
+                              </span>
+                            </td>
+                            <td className="num-col">{match.nonStrikerRuns ?? 0}</td>
+                            <td className="num-col">{match.nonStrikerBalls ?? 0}</td>
+                            <td className="num-col">0</td>
+                            <td className="num-col">0</td>
+                            <td className="num-col">{computeSR(match.nonStrikerRuns, match.nonStrikerBalls)}</td>
+                          </tr>
+                        ) : null}
+
+                        {!liveTelemetry?.striker && !match.striker && (
+                          <tr>
+                            <td colSpan="6" style={{ textAlign: 'center', color: '#94a3b8', padding: '16px' }}>
+                              Awaiting active batters telemetry...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 2. Bowlers Table */}
+                  <div className="cockpit-table-wrapper">
+                    <table className="cockpit-table">
+                      <thead>
+                        <tr>
+                          <th>Bowler</th>
+                          <th className="num-col">O</th>
+                          <th className="num-col">M</th>
+                          <th className="num-col">R</th>
+                          <th className="num-col">W</th>
+                          <th className="num-col">ECO</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {/* Active Bowler Row with * */}
+                        {liveTelemetry?.bowler ? (
+                          <tr>
+                            <td>
+                              <span className="cockpit-player-name-link">
+                                {liveTelemetry.bowler.name}
+                                <span className="strike-asterisk">*</span>
+                              </span>
+                            </td>
+                            <td className="num-col">{cleanCricketOvers(liveTelemetry.bowler.overs) ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.bowler.maidens ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.bowler.runs ?? 0}</td>
+                            <td className="num-col" style={{ color: '#dc2626', fontWeight: 900 }}>{liveTelemetry.bowler.wickets ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.bowler.economy ?? '0.00'}</td>
+                          </tr>
+                        ) : match.bowler ? (
+                          <tr>
+                            <td>
+                              <span className="cockpit-player-name-link">
+                                {match.bowler}
+                                <span className="strike-asterisk">*</span>
+                              </span>
+                            </td>
+                            <td className="num-col">{cleanCricketOvers(match.bowlerOvers) ?? 0}</td>
+                            <td className="num-col">0</td>
+                            <td className="num-col">{match.bowlerRuns ?? 0}</td>
+                            <td className="num-col" style={{ color: '#dc2626', fontWeight: 900 }}>{match.bowlerWickets ?? 0}</td>
+                            <td className="num-col">
+                              {match.bowlerOvers > 0 ? (match.bowlerRuns / parseFloat(match.bowlerOvers)).toFixed(2) : '0.00'}
+                            </td>
+                          </tr>
+                        ) : null}
+
+                        {/* Second Bowler Row */}
+                        {liveTelemetry?.bowlerNonStriker ? (
+                          <tr>
+                            <td>
+                              <span className="cockpit-player-name-link">
+                                {liveTelemetry.bowlerNonStriker.name}
+                              </span>
+                            </td>
+                            <td className="num-col">{cleanCricketOvers(liveTelemetry.bowlerNonStriker.overs) ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.bowlerNonStriker.maidens ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.bowlerNonStriker.runs ?? 0}</td>
+                            <td className="num-col" style={{ color: '#dc2626', fontWeight: 900 }}>{liveTelemetry.bowlerNonStriker.wickets ?? 0}</td>
+                            <td className="num-col">{liveTelemetry.bowlerNonStriker.economy ?? '0.00'}</td>
+                          </tr>
+                        ) : null}
+
+                        {!liveTelemetry?.bowler && !match.bowler && (
+                          <tr>
+                            <td colSpan="6" style={{ textAlign: 'center', color: '#94a3b8', padding: '16px' }}>
+                              Awaiting active bowler telemetry...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 3. Recent Deliveries & Partnership Footer */}
+                  <div className="cockpit-meta-footer">
+                    <div className="cockpit-footer-item">
+                      {renderRecentDeliveries(liveTelemetry?.recentBalls)}
+                    </div>
+
+                    {liveTelemetry?.partnership ? (
+                      <div className="cockpit-footer-item">
+                        <span>Partnership: </span>
+                        <strong>{liveTelemetry.partnership.runs} runs ({liveTelemetry.partnership.balls} balls)</strong>
+                      </div>
+                    ) : null}
+
+                    {liveTelemetry?.lastWicket ? (
+                      <div className="cockpit-footer-item last-wkt-footer-row" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span className="wicket-badge-pill">
+                          <Icon name="wicket" size={12} color="white" /> WICKET
+                        </span>
+                        <span className="last-wkt-text" style={{ color: '#1e293b', fontWeight: 600 }}>
+                          {liveTelemetry.lastWicket}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="empty-state">
-                <div className="empty-state-icon">📺</div>
+                <div className="empty-state-icon">
+                  <Icon name="tv" size={36} color="var(--color-primary)" />
+                </div>
                 <div className="empty-state-title">
-                  {isLive ? 'Awaiting live player data…' : isEnded ? 'Match has concluded' : 'Match not started yet'}
+                  {isLive ? 'Awaiting live ball telemetry…' : isEnded ? 'Match has concluded' : 'Match starts soon'}
                 </div>
                 <div className="empty-state-desc">
                   {isLive
-                    ? 'Live batter and bowler data will appear once the innings begins.'
+                    ? 'Live strike rotation and delivery breakdown will populate as balls are bowled.'
                     : isEnded
-                    ? `Result: ${match.status || 'See scorecard for details.'}`
-                    : 'Check back when the match starts for live ball-by-ball updates.'}
+                    ? `Result: ${displayStatus || 'View full scorecard for detailed innings figures.'}`
+                    : 'Check back when the match begins for live ball-by-ball commentary.'}
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* ── SCORECARD ── */}
+        {/* ── 2. SCORECARD TAB ── */}
         {activeTab === 'scorecard' && (
-          <div>
+          <div className="scorecard-box-container">
             {scorecardLoading ? (
-              <div className="app-loading" style={{ minHeight: 180 }}>
+              <div className="app-loading" style={{ minHeight: 220 }}>
                 <div className="spinner" />
-                <span>Fetching scorecard…</span>
+                <span>Loading Detailed Scorecard…</span>
               </div>
-            ) : scorecard?.innings?.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                {/* Innings Selector */}
-                {scorecard.innings.length > 1 && (
-                  <div className="innings-selector">
-                    {scorecard.innings.map((inn, idx) => (
-                      <button
-                        key={idx}
-                        className={`innings-btn${selectedInningIdx === idx ? ' active' : ''}`}
-                        onClick={() => setSelectedInningIdx(idx)}
-                      >
-                        {inn.inning || `Innings ${idx + 1}`}
-                      </button>
-                    ))}
+            ) : displayInnings.length > 0 ? (
+              <div className="scorecard-wrapper">
+                {/* Innings Switcher Tabs */}
+                {displayInnings.length > 1 && (
+                  <div className="scorecard-innings-nav">
+                    {displayInnings.map((inn, idx) => {
+                      const innTitle = inn.inning || `Innings ${idx + 1}`;
+                      const isSelected = selectedInningIdx === idx;
+                      return (
+                        <button
+                          key={idx}
+                          className={`inning-nav-btn ${isSelected ? 'active' : ''}`}
+                          onClick={() => setSelectedInningIdx(idx)}
+                        >
+                          <Icon name="cricket" size={14} />
+                          <span>{innTitle}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
 
                 {(() => {
-                  const inn = scorecard.innings[selectedInningIdx] || scorecard.innings[0];
-                  // Derive a clean batting-team label from the inning name
-                  // CricAPI returns e.g. "England Innings 1" or "Pakistan 1st Innings"
-                  const inningLabel = inn.inning || `Innings ${selectedInningIdx + 1}`;
+                  const inn = displayInnings[selectedInningIdx] || displayInnings[0];
+                  const inningLabel = inn.inning || `${inn.teamName || 'Innings'} ${selectedInningIdx + 1}`;
+
+                  // Compute aggregate innings stats
+                  const battingList = inn.batting || [];
+                  const bowlingList = inn.bowling || [];
+
+                  const totalRuns = inn.runs !== undefined ? inn.runs : battingList.reduce((acc, b) => acc + (parseInt(b.r, 10) || 0), 0);
+                  const total4s = battingList.reduce((acc, b) => acc + (parseInt(b['4s'], 10) || 0), 0);
+                  const total6s = battingList.reduce((acc, b) => acc + (parseInt(b['6s'], 10) || 0), 0);
+                  const wicketsFallen = inn.wickets !== undefined ? inn.wickets : battingList.filter(b => {
+                    const d = (b['dismissal-info'] || b.dismissal || '').toLowerCase();
+                    return d && d !== 'not out' && d !== 'batting' && d !== '—';
+                  }).length;
+
+                  // Extract authentic Did Not Bat / Yet to Bat players
+                  let yetToBat = [];
+                  if (Array.isArray(inn.didNotBat) && inn.didNotBat.length > 0) {
+                    yetToBat = inn.didNotBat;
+                  } else {
+                    const currentSquad = selectedInningIdx === 0 ? squadAList : squadBList;
+                    const battedNames = battingList.map(b => (typeof b.batsman === 'object' ? b.batsman?.name : b.batsman || '').toLowerCase());
+                    yetToBat = (currentSquad || []).filter(p => {
+                      const pName = (typeof p === 'object' ? p.name : String(p)).toLowerCase();
+                      return pName && !battedNames.some(bn => bn.includes(pName) || pName.includes(bn));
+                    });
+                  }
+
+                  const extrasTotal = inn.extras?.total !== undefined ? inn.extras.total : 0;
+                  const extrasBreakdown = `b ${inn.extras?.b || 0}, lb ${inn.extras?.lb || 0}, w ${inn.extras?.w || 0}, nb ${inn.extras?.nb || 0}`;
+
                   return (
-                    <>
-                      {/* Inning heading */}
-                      <div style={{
-                        fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17,
-                        color: 'var(--text-primary)', padding: '4px 0 12px',
-                        borderBottom: '2px solid var(--border)', marginBottom: 4
-                      }}>
-                        🏏 {inningLabel}
+                    <div className="scorecard-inning-card animate-fade-up">
+                      {/* Inning Overview Header Banner */}
+                      <div className="scorecard-inning-header">
+                        <div className="scorecard-header-left">
+                          <div className="inning-badge-icon">
+                            <Icon name="trophy" size={18} color="white" />
+                          </div>
+                          <div>
+                            <h3 className="scorecard-inning-title">{inningLabel}</h3>
+                            <div className="scorecard-boundary-stats">
+                              <span className="boundary-stat-pill four"><Icon name="zap" size={11} /> {total4s} Fours</span>
+                              <span className="boundary-stat-pill six"><Icon name="flame" size={11} /> {total6s} Sixes</span>
+                              {inn.overs ? <span className="boundary-stat-pill"><Icon name="clock" size={11} /> {cleanCricketOvers(inn.overs)} Overs</span> : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="scorecard-total-box">
+                          <div className="scorecard-total-val">
+                            {totalRuns}<span>/{wicketsFallen}</span>
+                          </div>
+                          {inn.overs ? <div className="scorecard-overs-sub">({cleanCricketOvers(inn.overs)} ov)</div> : null}
+                        </div>
                       </div>
 
-                      {/* Batting */}
-                      <div className="scorecard-section">
-                        <div className="scorecard-section-title">Batting</div>
-                        <div className="sc-table-wrap">
+                      {/* Batting Scorecard Table Box */}
+                      <div className="scorecard-table-card">
+                        <div className="scorecard-card-bar">
+                          <div className="card-bar-title">
+                            <Icon name="bat" size={15} color="var(--color-primary)" />
+                            <span>Batting Figures</span>
+                          </div>
+                          <span className="card-bar-sub">Standard ICC T20 / ODI / Test Rules</span>
+                        </div>
+
+                        <div className="sc-table-responsive">
                           <table className="sc-table">
                             <thead>
                               <tr>
                                 <th>Batter</th>
                                 <th>Dismissal</th>
-                                <th className="num">R</th>
-                                <th className="num">B</th>
-                                <th className="num">4s</th>
-                                <th className="num">6s</th>
-                                <th className="num">SR</th>
+                                <th className="num-col">R</th>
+                                <th className="num-col">B</th>
+                                <th className="num-col">4s</th>
+                                <th className="num-col">6s</th>
+                                <th className="num-col">SR</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {(inn.batting || []).map((b, i) => (
-                                <tr key={i}>
-                                  <td className="batter-name">
-                                    {typeof b.batsman === 'object' ? (b.batsman?.name || 'Batter') : (b.batsman || 'Batter')}
-                                  </td>
-                                  <td className="dismissal">{b['dismissal-info'] || b.dismissal || 'not out'}</td>
-                                  <td className="num runs-bold">{b.r ?? '—'}</td>
-                                  <td className="num">{b.b ?? '—'}</td>
-                                  <td className="num">{b['4s'] ?? '—'}</td>
-                                  <td className="num">{b['6s'] ?? '—'}</td>
-                                  <td className="num">{b.sr ?? '—'}</td>
-                                </tr>
-                              ))}
+                              {battingList.map((b, i) => {
+                                const bName = typeof b.batsman === 'object' ? (b.batsman?.name || 'Batter') : (b.batsman || 'Batter');
+                                const dismissal = b['dismissal-info'] || b.dismissal || 'not out';
+                                const isNotOut = dismissal.toLowerCase().includes('not out') || dismissal.toLowerCase().includes('batting');
+                                const runs = parseInt(b.r, 10) || 0;
+                                const is50 = runs >= 50 && runs < 100;
+                                const is100 = runs >= 100;
+                                const sr = b.sr ?? computeSR(runs, parseInt(b.b, 10) || 0);
+
+                                return (
+                                  <tr key={i} className={isNotOut ? 'row-not-out' : ''}>
+                                    <td className="batter-cell">
+                                      <div className="player-flex-cell">
+                                        <div className="player-avatar-circle">
+                                          {bName.slice(0, 2).toUpperCase()}
+                                        </div>
+                                        <div className="player-meta-block">
+                                          <span className="batter-name-text">
+                                            {bName}
+                                            {is100 && <span className="milestone-badge century"><Icon name="crown" size={10} /> 100</span>}
+                                            {is50 && <span className="milestone-badge fifty"><Icon name="award" size={10} /> 50</span>}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="dismissal-cell">
+                                      <span className={isNotOut ? 'dismissal-not-out' : 'dismissal-out'}>
+                                        {dismissal}
+                                      </span>
+                                    </td>
+                                    <td className="num-col runs-bold-cell">{b.r ?? '0'}</td>
+                                    <td className="num-col balls-cell">{b.b ?? '0'}</td>
+                                    <td className="num-col fours-cell">{b['4s'] ?? '0'}</td>
+                                    <td className="num-col sixes-cell">{b['6s'] ?? '0'}</td>
+                                    <td className="num-col sr-cell">{getSRBadge(sr)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Extras Row */}
+                        <div className="scorecard-extras-strip">
+                          <div className="extras-title">Extras</div>
+                          <div className="extras-details">
+                            <strong>{extrasTotal}</strong> ({extrasBreakdown})
+                          </div>
+                        </div>
+
+                        {/* Did Not Bat list */}
+                        {yetToBat.length > 0 && (
+                          <div className="yet-to-bat-strip">
+                            <span className="yet-to-bat-label">Did Not Bat:</span>
+                            <div className="yet-to-bat-players">
+                              {yetToBat.map((p, idx) => {
+                                const pName = typeof p === 'object' ? (p.name || p.batsman || String(p)) : String(p);
+                                return (
+                                  <span key={idx} className="yet-to-bat-chip">
+                                    {pName}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bowling Scorecard Table Box */}
+                      <div className="scorecard-table-card" style={{ marginTop: 20 }}>
+                        <div className="scorecard-card-bar">
+                          <div className="card-bar-title">
+                            <Icon name="ball" size={15} color="var(--color-live)" />
+                            <span>Bowling Figures</span>
+                          </div>
+                          <span className="card-bar-sub">Economy & Wickets Breakdown</span>
+                        </div>
+
+                        <div className="sc-table-responsive">
+                          <table className="sc-table">
+                            <thead>
+                              <tr>
+                                <th>Bowler</th>
+                                <th className="num-col">O</th>
+                                <th className="num-col">M</th>
+                                <th className="num-col">R</th>
+                                <th className="num-col wicket-hdr">W</th>
+                                <th className="num-col econ-hdr">Econ</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {bowlingList.map((bw, i) => {
+                                const bwName = typeof bw.bowler === 'object' ? (bw.bowler?.name || 'Bowler') : (bw.bowler || 'Bowler');
+                                const wickets = parseInt(bw.w, 10) || 0;
+                                const isWicketTaker = wickets >= 2;
+
+                                return (
+                                  <tr key={i} className={isWicketTaker ? 'row-wicket-taker' : ''}>
+                                    <td className="bowler-cell">
+                                      <div className="player-flex-cell">
+                                        <div className="player-avatar-circle bowler">
+                                          {bwName.slice(0, 2).toUpperCase()}
+                                        </div>
+                                        <span className="bowler-name-text">{bwName}</span>
+                                      </div>
+                                    </td>
+                                    <td className="num-col overs-cell">{cleanCricketOvers(bw.o) ?? '—'}</td>
+                                    <td className="num-col maidens-cell">{bw.m ?? '0'}</td>
+                                    <td className="num-col runs-conceded-cell">{bw.r ?? '—'}</td>
+                                    <td className="num-col wickets-highlight-cell">
+                                      <span className={`wickets-pill ${wickets > 0 ? 'has-wickets' : ''}`}>
+                                        {bw.w ?? '0'}
+                                      </span>
+                                    </td>
+                                    <td className="num-col econ-cell">{getEconBadge(bw.eco)}</td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
                       </div>
 
-                      {/* Bowling */}
-                      <div className="scorecard-section">
-                        <div className="scorecard-section-title">🎳 Bowling</div>
-                        <div className="sc-table-wrap">
-                          <table className="sc-table">
-                            <thead>
-                              <tr>
-                                <th>Bowler</th>
-                                <th className="num">O</th>
-                                <th className="num">M</th>
-                                <th className="num">R</th>
-                                <th className="num" style={{ color: 'var(--color-out)' }}>W</th>
-                                <th className="num" style={{ color: 'var(--color-ball)' }}>Econ</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(inn.bowling || []).map((bw, i) => (
-                                <tr key={i}>
-                                  <td className="batter-name">
-                                    {typeof bw.bowler === 'object' ? (bw.bowler?.name || 'Bowler') : (bw.bowler || 'Bowler')}
-                                  </td>
-                                  <td className="num">{bw.o ?? '—'}</td>
-                                  <td className="num">{bw.m ?? '0'}</td>
-                                  <td className="num">{bw.r ?? '—'}</td>
-                                  <td className="num wickets-red">{bw.w ?? '0'}</td>
-                                  <td className="num economy-amber">{bw.eco ?? '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                      {/* Fall of Wickets Timeline */}
+                      <div className="fow-strip-card" style={{ marginTop: 20 }}>
+                        <div className="fow-title">
+                          <Icon name="wicket" size={14} color="var(--color-out)" />
+                          <span>Fall of Wickets Timeline</span>
+                        </div>
+                        <div className="fow-items-row">
+                          {battingList
+                            .filter(b => {
+                              const d = (b['dismissal-info'] || b.dismissal || '').toLowerCase();
+                              return d && !d.includes('not out') && !d.includes('batting') && d !== '—';
+                            })
+                            .map((b, idx) => {
+                              const bName = typeof b.batsman === 'object' ? (b.batsman?.name || 'Batter') : (b.batsman || 'Batter');
+                              const n = idx + 1;
+                              const ordinal = n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
+                              return (
+                                <div key={idx} className="fow-pill">
+                                  <span className="fow-number">{ordinal} Wkt</span>
+                                  <span className="fow-player">{bName}</span>
+                                  <span className="fow-score">({b.r ?? '0'} runs)</span>
+                                </div>
+                              );
+                            })}
                         </div>
                       </div>
-                    </>
+                    </div>
                   );
                 })()}
               </div>
             ) : (
               <div className="empty-state">
-                <div className="empty-state-icon">📊</div>
-                <div className="empty-state-title">Scorecard not yet available</div>
-                <div className="empty-state-desc">Detailed figures are published as the innings progresses.</div>
+                <div className="empty-state-icon">
+                  <Icon name="activity" size={36} color="var(--color-primary)" />
+                </div>
+                <div className="empty-state-title">Scorecard Not Yet Available</div>
+                <div className="empty-state-desc">Full inning scorecards will appear once the innings commence.</div>
               </div>
             )}
           </div>
         )}
 
-        {/* ── SQUADS ── */}
+        {/* ── 3. SQUADS TAB ── */}
         {activeTab === 'squads' && (
-          <div className="squads-two-col">
+          <div className="squads-two-col animate-fade-up">
             {[
-              { team: match.teamA, squad: squadAList, side: 'team-a' },
-              { team: match.teamB, squad: squadBList, side: 'team-b' },
-            ].map(({ team, squad, side }) => (
-              <div key={team} className="squad-panel">
-                <div className={`squad-panel-title ${side}`}>
-                  {team} Squad
-                  <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
-                    {squad.length} Players
+              { team: match.teamA, squad: squadAList, side: 'team-a', flag: flagA },
+              { team: match.teamB, squad: squadBList, side: 'team-b', flag: flagB },
+            ].map(({ team, squad, side, flag }) => (
+              <div key={team} className="squad-panel-card">
+                <div className={`squad-panel-header ${side}`}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {flag ? (
+                      <img src={flag} alt={team} className="squad-team-flag" />
+                    ) : (
+                      <div className="squad-team-mono">{team?.slice(0, 2).toUpperCase()}</div>
+                    )}
+                    <span className="squad-panel-team-name">{team}</span>
+                  </div>
+                  <span className="squad-count-chip">
+                    <Icon name="users" size={12} /> {squad.length} Players
                   </span>
                 </div>
-                {squad.length > 0 ? (
-                  squad.map((p, idx) => {
-                    const playerName = typeof p === 'object' ? (p.name || '') : String(p || '');
-                    const cleanName = playerName.replace(/\s*\([c|C|vc|VC|w|wk|WK|Wk]+\)\s*/g, '').trim();
-                    const isCaptain = playerName.toLowerCase().includes('(c)') || playerName.toLowerCase().includes('(capt)');
-                    const isViceCaptain = playerName.toLowerCase().includes('(vc)');
-                    const role = getPlayerRole(idx, playerName);
-                    return (
-                      <div key={idx} className="squad-player-item">
-                        <span className="squad-player-num">{String(idx + 1).padStart(2, '0')}</span>
-                        <span className="squad-player-name">
-                          {cleanName || playerName}
-                          {isCaptain && <span className="squad-captain-badge">C</span>}
-                          {isViceCaptain && <span className="squad-vc-badge">VC</span>}
-                        </span>
-                        <span className={`role-chip ${role}`}>{ROLE_LABELS[role]}</span>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: '20px 0' }}>
-                    Squad announcement pending
-                  </div>
-                )}
+
+                <div className="squad-players-scroll">
+                  {squad.length > 0 ? (
+                    squad.map((p, idx) => {
+                      const playerName = typeof p === 'object' ? (p.name || '') : String(p || '');
+                      const cleanName = playerName.replace(/\s*\([c|C|vc|VC|w|wk|WK|Wk]+\)\s*/g, '').trim();
+                      const isCaptain = playerName.toLowerCase().includes('(c)') || playerName.toLowerCase().includes('(capt)');
+                      const isViceCaptain = playerName.toLowerCase().includes('(vc)');
+                      const role = getPlayerRole(idx, playerName);
+
+                      return (
+                        <div key={idx} className="squad-player-item-row">
+                          <span className="squad-player-index">{String(idx + 1).padStart(2, '0')}</span>
+                          <div className="squad-player-name-wrap">
+                            <span className="squad-player-fullname">{cleanName || playerName}</span>
+                            {isCaptain && <span className="captain-badge-pill">C</span>}
+                            {isViceCaptain && <span className="vc-badge-pill">VC</span>}
+                          </div>
+                          <span className={`role-chip ${role}`}>{ROLE_LABELS[role]}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="squad-empty-text">Squad announcement awaited</div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* ── INFO ── */}
+        {/* ── 4. MATCH INFO TAB (Exact Image 1 Reference UI) ── */}
         {activeTab === 'info' && (
-          <div className="info-grid">
-            {[
-              { label: 'Teams', value: `${match.teamA} vs ${match.teamB}` },
-              { label: 'Venue', value: match.venue || 'TBD' },
-              { label: 'Date', value: match.date || 'Today' },
-              { label: 'Format', value: 'T20 International' },
-              { label: 'Status', value: match.status || (isLive ? 'Live' : isEnded ? 'Completed' : 'Upcoming') },
-              { label: 'Toss', value: match.toss || 'Awaited' },
-            ].map(({ label, value }) => (
-              <div key={label} className="info-cell">
-                <div className="info-cell-label">{label}</div>
-                <div className="info-cell-value">{value}</div>
+          <div className="match-info-table-card animate-fade-up">
+            <div className="match-info-card-header">
+              <h3>Info</h3>
+            </div>
+
+            <div className="match-info-table-body">
+              {/* Match */}
+              <div className="match-info-row">
+                <div className="match-info-label">Match</div>
+                <div className="match-info-value-wrap">
+                  <span className="match-info-value">
+                    {match.teamA} vs {match.teamB} • {match.matchType || 'Match'} • {match.series || 'Cricket Series'}
+                  </span>
+                </div>
               </div>
-            ))}
+
+              {/* Series */}
+              <div className="match-info-row">
+                <div className="match-info-label">Series</div>
+                <div className="match-info-value-wrap">
+                  <span className="match-info-value">
+                    {match.series || match.matchType || 'International Tournament'}
+                  </span>
+                  <span className="match-info-chevron">›</span>
+                </div>
+              </div>
+
+              {/* Date */}
+              <div className="match-info-row">
+                <div className="match-info-label">Date</div>
+                <div className="match-info-value-wrap">
+                  <span className="match-info-value">
+                    {match.date ? formatToIST(match.date) : 'Today'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Time */}
+              <div className="match-info-row">
+                <div className="match-info-label">Time</div>
+                <div className="match-info-value-wrap">
+                  <span className="match-info-value">
+                    {displayStatus || (isLive ? 'Live In Progress' : isEnded ? 'Concluded' : 'Scheduled')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Toss */}
+              <div className="match-info-row">
+                <div className="match-info-label">Toss</div>
+                <div className="match-info-value-wrap">
+                  <span className="match-info-value">
+                    {match.toss || `${match.teamA} vs ${match.teamB} (Standard Toss Guidelines)`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Venue */}
+              <div className="match-info-row">
+                <div className="match-info-label">Venue</div>
+                <div className="match-info-value-wrap">
+                  <span className="match-info-value">
+                    {match.venue || 'International Ground'}
+                  </span>
+                  <span className="match-info-chevron">›</span>
+                </div>
+              </div>
+
+              {/* Format */}
+              <div className="match-info-row">
+                <div className="match-info-label">Format</div>
+                <div className="match-info-value-wrap">
+                  <span className="match-info-value">
+                    {match.matchType || 'T20 Match'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div className="match-info-row">
+                <div className="match-info-label">Status</div>
+                <div className="match-info-value-wrap">
+                  <span className="match-info-value" style={{ color: isLive ? '#059669' : isEnded ? '#2563eb' : '#d97706', fontWeight: 700 }}>
+                    {displayStatus || (isLive ? 'Live match in progress' : isEnded ? 'Match completed' : 'Upcoming')}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

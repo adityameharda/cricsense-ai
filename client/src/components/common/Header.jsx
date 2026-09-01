@@ -10,9 +10,9 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
   const [isLogoutOpen, setIsLogoutOpen] = useState(false);
 
   const navLinks = [
-    { name: '🏏 Live Matches', path: '/' },
-    { name: '🏆 Fantasy', path: '/dashboard', authRequired: true },
-    { name: '📊 Leaderboard', path: '/leaderboard', authRequired: true },
+    { name: 'Live Matches', path: '/', icon: 'cricket' },
+    { name: 'Fantasy Arena', path: '/dashboard', authRequired: true, icon: 'trophy' },
+    { name: 'Leaderboard', path: '/leaderboard', authRequired: true, icon: 'award' },
   ];
 
   const handleConfirmLogout = () => {
@@ -23,13 +23,15 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
   return (
     <>
       <nav className="cricscore-nav">
-        {/* Logo */}
+        {/* Brand Logo */}
         <Link to="/" className="nav-logo-link">
-          <div className="nav-logo-icon">🏏</div>
+          <div className="nav-logo-icon">
+            <Icon name="cricket" size={20} color="white" />
+          </div>
           <span className="nav-logo-text">Cric<span>Score</span></span>
         </Link>
 
-        {/* Desktop Nav */}
+        {/* Center Nav Links */}
         <div className="nav-center">
           {navLinks.map((item) => {
             if (item.authRequired && !user) return null;
@@ -39,9 +41,10 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`nav-link-item${isActive ? ' active' : ''}`}
+                className={`nav-link-item ${isActive ? 'active' : ''}`}
               >
-                {item.name}
+                <Icon name={item.icon} size={15} />
+                <span>{item.name}</span>
               </Link>
             );
           })}
@@ -50,7 +53,7 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
         {/* Right Actions */}
         <div className="nav-right">
           {/* Live Count Pill */}
-          <div className="live-pill">
+          <div className="live-pill" title="Active live matches being tracked">
             <span className="live-pulse-ring">
               <span className="live-pulse-ring-outer" />
               <span className="live-pulse-ring-inner" />
@@ -63,14 +66,15 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
             id="cricsense-ai-btn"
             onClick={() => setIsAiOpen(true)}
             className="ai-trigger-btn"
+            title="Ask CricSense cricket AI assistant"
           >
-            <Icon name="sparkles" size={14} />
+            <Icon name="sparkles" size={15} color="var(--color-primary)" />
             <span>Ask CricSense</span>
           </button>
 
-          {/* Auth / Profile */}
+          {/* User Auth Profile */}
           {user ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="nav-user-container">
               <Link to="/profile" className="user-avatar-pill">
                 <div className="user-avatar-circle">
                   {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
@@ -82,11 +86,15 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
                 className="nav-logout-btn"
                 title="Sign out of your account"
               >
-                Logout
+                <Icon name="logout" size={15} />
+                <span>Sign Out</span>
               </button>
             </div>
           ) : (
-            <Link to="/login" className="nav-login-btn">Log In</Link>
+            <Link to="/login" className="nav-login-btn">
+              <Icon name="login" size={14} />
+              <span>Log In</span>
+            </Link>
           )}
         </div>
       </nav>
@@ -102,4 +110,3 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
 };
 
 export default Header;
-

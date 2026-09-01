@@ -21,10 +21,11 @@ app.use('/api', require('./routes/api'));
 app.use('/api', require('./routes/liveScore'));
 app.use('/api/fantasy', require('./routes/fantasy'));
 
-// Auth & Contests (were missing — added now)
+// Auth & Contests
 const { router: authRouter } = require('./routes/auth');
 app.use('/api/auth', authRouter);
 app.use('/api/contests', require('./routes/contests'));
+app.use('/api/cricsense', require('./routes/cricsense'));
 
 const io = new Server(server, {
   cors: {

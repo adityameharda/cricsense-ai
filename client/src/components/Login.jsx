@@ -53,10 +53,10 @@ export const Login = ({ onLogin }) => {
       <div className="auth-card-outer">
         {/* Left Hero Showcase */}
         <div className="auth-left-panel">
-          <div className="auth-left-glow" />
-          
           <div className="auth-brand-row">
-            <div className="auth-brand-logo">🏏</div>
+            <div className="auth-brand-icon">
+              <Icon name="cricket" size={22} color="white" />
+            </div>
             <div>
               <span className="auth-brand-name">CricScore</span>
               <span className="auth-brand-tag">PRO</span>
@@ -73,12 +73,14 @@ export const Login = ({ onLogin }) => {
 
             <div className="auth-features">
               {[
-                { title: 'Sub-Second Telemetry', desc: 'Live ball-by-ball updates & CRR tracking' },
-                { title: 'Fantasy Dream Arena', desc: 'Custom private contests & real-time rank points' },
-                { title: 'CricSense AI Engine', desc: 'Live tactical insights & win probability' }
+                { title: 'Sub-Second Telemetry', desc: 'Live ball-by-ball updates & CRR tracking', icon: 'zap' },
+                { title: 'Fantasy Dream Arena', desc: 'Custom private contests & real-time rank points', icon: 'trophy' },
+                { title: 'CricSense AI Engine', desc: 'Live tactical insights & win probability', icon: 'sparkles' }
               ].map((f, i) => (
                 <div key={i} className="auth-feature-item">
-                  <div className="auth-feature-check">✓</div>
+                  <div className="auth-feature-icon">
+                    <Icon name={f.icon} size={14} color="white" />
+                  </div>
                   <div>
                     <div className="auth-feature-title">{f.title}</div>
                     <div className="auth-feature-desc">{f.desc}</div>
@@ -93,182 +95,126 @@ export const Login = ({ onLogin }) => {
               <span className="auth-live-dot" />
               <span>Live match feeds active</span>
             </div>
-            <span>v1.0 Pro Edition</span>
+            <span>v2.0 Pro Edition</span>
           </div>
         </div>
 
         {/* Right Form Panel */}
         <div className="auth-right-panel">
-          {/* Segmented Switch */}
           <div className="auth-toggle">
             <button
               type="button"
-              id="login-tab-btn"
-              className={`auth-toggle-btn${isLogin ? ' active' : ''}`}
+              className={`auth-toggle-btn ${isLogin ? 'active' : ''}`}
               onClick={() => { setIsLogin(true); setError(''); }}
             >
               Sign In
             </button>
             <button
               type="button"
-              id="register-tab-btn"
-              className={`auth-toggle-btn${!isLogin ? ' active' : ''}`}
+              className={`auth-toggle-btn ${!isLogin ? 'active' : ''}`}
               onClick={() => { setIsLogin(false); setError(''); }}
             >
               Create Account
             </button>
           </div>
 
-          <div className="auth-header-block">
-            <h3 className="auth-panel-title">
-              {isLogin ? 'Welcome back 👋' : 'Join the Arena 🚀'}
-            </h3>
-            <p className="auth-panel-sub">
-              {isLogin
-                ? 'Sign in to access live scorecards and manage your fantasy teams.'
-                : 'Create an account to start drafting your dream 11.'}
-            </p>
-          </div>
+          <h3 className="auth-panel-title">{isLogin ? 'Welcome Back!' : 'Join CricScore'}</h3>
+          <p className="auth-panel-sub">
+            {isLogin ? 'Access your fantasy squads and live predictions' : 'Create an account to start competing'}
+          </p>
 
           {error && (
-            <div className="auth-error-banner">
-              <span className="auth-error-icon">⚠️</span>
-              <div className="auth-error-text">{error}</div>
+            <div className="auth-error">
+              <Icon name="info" size={16} color="var(--color-out)" />
+              <span>{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="auth-form">
-            {/* Username */}
+          <form onSubmit={handleSubmit}>
             <div className="form-group">
-              <label className="form-label" htmlFor="username">Username</label>
+              <label className="form-label">Username</label>
               <div className="input-wrap">
                 <span className="input-icon">
                   <Icon name="user" size={16} />
                 </span>
                 <input
-                  id="username"
-                  name="username"
                   type="text"
-                  required
-                  placeholder="Enter your username"
+                  name="username"
                   value={formData.username}
                   onChange={handleChange}
+                  placeholder="Enter your username"
                   className="form-input"
-                  autoComplete="username"
+                  required
                 />
               </div>
             </div>
 
-            {/* Email (only in register) */}
             {!isLogin && (
               <div className="form-group">
-                <label className="form-label" htmlFor="email">Email Address</label>
+                <label className="form-label">Email Address</label>
                 <div className="input-wrap">
                   <span className="input-icon">
                     <Icon name="mail" size={16} />
                   </span>
                   <input
-                    id="email"
-                    name="email"
                     type="email"
-                    required
-                    placeholder="name@example.com"
+                    name="email"
                     value={formData.email}
                     onChange={handleChange}
+                    placeholder="Enter your email"
                     className="form-input"
-                    autoComplete="email"
+                    required
                   />
                 </div>
               </div>
             )}
 
-            {/* Password */}
             <div className="form-group">
               <div className="form-label-row">
-                <label className="form-label" htmlFor="password">Password</label>
-                {isLogin && (
-                  <span className="forgot-link" title="Contact admin to reset">Forgot password?</span>
-                )}
+                <label className="form-label" style={{ marginBottom: 0 }}>Password</label>
               </div>
               <div className="input-wrap">
                 <span className="input-icon">
                   <Icon name="lock" size={16} />
                 </span>
                 <input
-                  id="password"
-                  name="password"
                   type={showPassword ? 'text' : 'password'}
-                  required
-                  placeholder="Enter your password"
+                  name="password"
                   value={formData.password}
                   onChange={handleChange}
+                  placeholder="Enter your password"
                   className="form-input"
-                  autoComplete={isLogin ? 'current-password' : 'new-password'}
+                  required
                 />
                 <button
                   type="button"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                   onClick={() => setShowPassword(!showPassword)}
                   className="password-toggle"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   <Icon name={showPassword ? 'eye-off' : 'eye'} size={16} />
                 </button>
               </div>
             </div>
 
-            {/* Remember Me */}
-            {isLogin && (
-              <div className="remember-row">
-                <label className="remember-checkbox-label">
-                  <input
-                    id="remember"
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="remember-checkbox"
-                  />
-                  <span>Stay signed in for 7 days</span>
-                </label>
-              </div>
-            )}
-
-            {/* Primary Submit Button */}
             <button
               type="submit"
-              id="auth-submit-btn"
               disabled={!isFormValid || loading}
               className="auth-submit-btn"
             >
-              {loading ? (
-                <>
-                  <div className="auth-btn-spinner" />
-                  <span>Authenticating…</span>
-                </>
-              ) : isLogin ? 'Sign In to CricScore →' : 'Complete Registration →'}
+              <Icon name={isLogin ? 'login' : 'check'} size={16} color="white" />
+              <span>{loading ? 'Authenticating…' : isLogin ? 'Sign In to Account' : 'Create My Account'}</span>
             </button>
           </form>
 
-          {/* Quick Demo Fill (for testing / evaluator convenience) */}
-          <div className="auth-quick-demo">
-            <button
-              type="button"
-              onClick={handleQuickDemo}
-              className="auth-demo-btn"
-            >
-              ⚡ Fill Demo Account (cric_fan)
-            </button>
-          </div>
-
-          <div className="auth-guest-divider">
-            <span>or</span>
-          </div>
+          <hr className="auth-divider" />
 
           <button
             type="button"
+            onClick={handleQuickDemo}
             className="auth-guest-link"
-            onClick={() => navigate('/')}
           >
-            Continue as Guest (Read Only) →
+            Fill Demo Credentials (cric_fan)
           </button>
         </div>
       </div>

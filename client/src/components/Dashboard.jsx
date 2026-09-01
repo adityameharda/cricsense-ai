@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import LogoutModal from './common/LogoutModal';
+import Icon from './common/Icons';
 
-const ACCENT_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626'];
+const ACCENT_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed'];
 
 const Dashboard = ({ user, onLogout }) => {
   const [contests, setContests] = useState([]);
@@ -59,10 +60,10 @@ const Dashboard = ({ user, onLogout }) => {
   };
 
   const statCards = [
-    { label: 'Fantasy Points', value: (stats.virtualCoins || 0).toLocaleString(), sub: 'Career Total', accent: ACCENT_COLORS[0] },
-    { label: 'Total Matches', value: stats.totalMatches, sub: 'Participated', accent: ACCENT_COLORS[1] },
-    { label: 'Matches Won', value: stats.totalWins, sub: 'Victory Count', accent: ACCENT_COLORS[2] },
-    { label: 'Best Rank', value: stats.bestRank ? `#${stats.bestRank}` : 'N/A', sub: 'All-Time High', accent: ACCENT_COLORS[3] },
+    { label: 'Fantasy Points', value: (stats.virtualCoins || 0).toLocaleString(), sub: 'Career Points Balance', accent: ACCENT_COLORS[0], icon: 'coins' },
+    { label: 'Total Matches', value: stats.totalMatches, sub: 'Fixtures Participated', accent: ACCENT_COLORS[1], icon: 'cricket' },
+    { label: 'Matches Won', value: stats.totalWins, sub: 'Victory Tally', accent: ACCENT_COLORS[2], icon: 'trophy' },
+    { label: 'Best Rank', value: stats.bestRank ? `#${stats.bestRank}` : 'N/A', sub: 'All-Time High', accent: ACCENT_COLORS[3], icon: 'crown' },
   ];
 
   return (
@@ -71,14 +72,15 @@ const Dashboard = ({ user, onLogout }) => {
       <div className="dashboard-welcome-header">
         <div>
           <div className="dashboard-greeting">
-            👋 Welcome back, {user?.username}!
+            <span>Welcome back, {user?.username}!</span>
           </div>
           <div className="dashboard-greeting-sub">
-            Here's your fantasy performance overview
+            Track your fantasy rankings, active contests, and cricket intelligence
           </div>
         </div>
         <button onClick={() => setIsLogoutOpen(true)} className="dashboard-logout-btn">
-          Sign Out
+          <Icon name="logout" size={14} color="white" />
+          <span>Sign Out</span>
         </button>
       </div>
 
@@ -94,7 +96,7 @@ const Dashboard = ({ user, onLogout }) => {
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="stat-card">
               <div className="skeleton-line" style={{ height: 14, width: '60%', marginBottom: 12 }} />
-              <div className="skeleton-line" style={{ height: 42, width: '40%', marginBottom: 8 }} />
+              <div className="skeleton-line" style={{ height: 38, width: '40%', marginBottom: 8 }} />
               <div className="skeleton-line" style={{ height: 12, width: '50%' }} />
             </div>
           ))}
@@ -104,7 +106,12 @@ const Dashboard = ({ user, onLogout }) => {
           {statCards.map((card) => (
             <div key={card.label} className="stat-card">
               <div className="stat-card-accent" style={{ background: card.accent }} />
-              <div className="stat-card-label">{card.label}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="stat-card-label">{card.label}</div>
+                <div className="stat-card-icon-wrap" style={{ color: card.accent }}>
+                  <Icon name={card.icon} size={18} />
+                </div>
+              </div>
               <div className="stat-card-value">{card.value}</div>
               <div className="stat-card-sub">{card.sub}</div>
             </div>
@@ -115,48 +122,61 @@ const Dashboard = ({ user, onLogout }) => {
       {/* Quick Actions */}
       <div className="dashboard-actions">
         <Link to="/" className="dashboard-action-btn primary">
-          🏏 View Live Matches
+          <Icon name="cricket" size={16} />
+          <span>View Live Matches</span>
         </Link>
         <Link to="/create-contest" className="dashboard-action-btn secondary">
-          🏆 Create Contest
+          <Icon name="plus" size={16} />
+          <span>Create Contest</span>
         </Link>
         <Link to="/profile" className="dashboard-action-btn secondary">
-          📊 My Profile
+          <Icon name="user" size={16} />
+          <span>My Profile</span>
         </Link>
       </div>
 
-      {/* Contests */}
+      {/* Contests Section */}
       <div>
-        <div className="contests-section-header">Your Contests</div>
+        <div className="contests-section-header">
+          <Icon name="trophy" size={20} color="var(--color-primary)" />
+          <span>Your Active Contests</span>
+        </div>
         {loadingData ? (
           <div className="empty-state">
             <div className="spinner" style={{ margin: '0 auto' }} />
           </div>
         ) : contests.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">🏟️</div>
-            <div className="empty-state-title">No contests yet</div>
-            <div className="empty-state-desc">
-              Join a match and create or join a fantasy contest to get started.
+            <div className="empty-state-icon">
+              <Icon name="award" size={36} color="var(--color-primary)" />
             </div>
+            <div className="empty-state-title">No contests created yet</div>
+            <div className="empty-state-desc">
+              Select any live match to build your squad and challenge friends in private contests.
+            </div>
+            <Link to="/create-contest" className="top-back-btn" style={{ marginTop: 14 }}>
+              <Icon name="plus" size={14} />
+              <span>Create Your First Contest</span>
+            </Link>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {contests.map((contest) => (
               <div key={contest._id} className="contest-card">
                 <div>
                   <div className="contest-card-name">{contest.name}</div>
                   <div className="contest-card-meta">
                     <span>Code: <span className="contest-card-code">{contest.contestId}</span></span>
-                    <span>{contest.participants.length}/{contest.maxParticipants} players</span>
-                    <span>{contest.entryFee} coins entry</span>
+                    <span><Icon name="users" size={12} /> {contest.participants.length}/{contest.maxParticipants} players</span>
+                    <span><Icon name="coins" size={12} /> {contest.entryFee} coins entry</span>
                   </div>
                 </div>
                 <Link
                   to={`/leaderboard/${contest.matchId}?contestId=${contest.contestId}`}
                   className="contest-view-btn"
                 >
-                  View Leaderboard →
+                  <span>View Leaderboard</span>
+                  <Icon name="arrow-right" size={13} />
                 </Link>
               </div>
             ))}

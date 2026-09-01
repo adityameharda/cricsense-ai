@@ -5,7 +5,7 @@ import Icon from './common/Icons';
 
 const PARTICIPANT_PRESETS = [2, 4, 6, 8, 10, 15, 20];
 
-const ContestCreation = ({ user }) => {
+export const ContestCreation = ({ user }) => {
   const [matches, setMatches] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
@@ -26,10 +26,13 @@ const ContestCreation = ({ user }) => {
   const fetchMatches = async () => {
     try {
       const response = await axios.get('http://localhost:5000/api/matches');
-      const availableMatches = (response.data || []).filter(m => !m.matchEnded);
-      setMatches(availableMatches.length > 0 ? availableMatches : response.data || []);
-      if (availableMatches.length > 0 && !formData.matchId) {
-        setFormData(prev => ({ ...prev, matchId: availableMatches[0].matchId || availableMatches[0]._id }));
+      const all = response.data || [];
+      // Prioritize upcoming matches where registration is open
+      const upcoming = all.filter(m => !m.matchStarted && !m.matchEnded);
+      const list = upcoming.length > 0 ? upcoming : all;
+      setMatches(all);
+      if (list.length > 0 && !formData.matchId) {
+        setFormData(prev => ({ ...prev, matchId: list[0].matchId || list[0]._id }));
       }
     } catch (err) {
       console.error('Failed to fetch matches:', err);
@@ -49,6 +52,9 @@ const ContestCreation = ({ user }) => {
     setFormData(prev => ({ ...prev, maxParticipants: count }));
   };
 
+  const selectedMatch = matches.find(m => (m.matchId || m._id) === formData.matchId);
+  const isMatchClosed = selectedMatch ? (selectedMatch.matchStarted || selectedMatch.matchEnded) : false;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -56,7 +62,12 @@ const ContestCreation = ({ user }) => {
       return;
     }
     if (!formData.matchId) {
-      setError('Please select an active cricket fixture.');
+      setError('Please select an active upcoming cricket fixture.');
+      return;
+    }
+
+    if (isMatchClosed) {
+      setError('Not applicable now. Contests can only be created before the match begins (locks 2 min before start).');
       return;
     }
 
@@ -79,7 +90,7 @@ const ContestCreation = ({ user }) => {
         navigate(`/leaderboard/${formData.matchId}`);
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create contest. Please try again.');
+      setError(err.response?.data?.error || 'Not applicable now. Contest creation failed. Please choose an upcoming fixture.');
     } finally {
       setLoading(false);
     }
@@ -97,227 +108,169 @@ const ContestCreation = ({ user }) => {
     <div className="contest-creation-page animate-fade-up">
       {/* Top Bar Navigation */}
       <div className="page-top-bar">
-        <Link to="/dashboard" className="top-back-btn" id="contest-back-btn">
-          <span className="back-arrow">←</span>
-          <span>Back to Dashboard</span>
+        <Link to="/" className="top-back-btn" id="contest-back-btn">
+          <Icon name="arrow-left" size={14} />
+          <span>Back to Matches</span>
         </Link>
-        <Link to="/" className="top-back-btn-sub">
-          Home
-        </Link>
+        <span className="match-format-chip">
+          <Icon name="award" size={13} /> Private League Hub
+        </span>
       </div>
 
-      <div className="contest-card-wrapper">
-        {/* Header Hero Banner */}
-        <div className="contest-hero-banner">
-          <div className="contest-hero-icon-box">
-            <Icon name="trophy" size={28} />
+      {createdContest ? (
+        /* Contest Created Success Card */
+        <div className="contest-success-card">
+          <div className="contest-success-icon-wrap">
+            <Icon name="trophy" size={32} color="#2563eb" />
           </div>
-          <div>
-            <h2 className="contest-hero-title">Create Private Fantasy League</h2>
-            <p className="contest-hero-sub">
-              Host a private room, invite friends with your unique code, and compete on the live leaderboard!
-            </p>
+
+          <h2 className="contest-success-title">Contest Room Created!</h2>
+          <p className="contest-success-sub">
+            Share this unique room code with friends to join your private leaderboard before the match starts:
+          </p>
+
+          {/* Code Box */}
+          <div className="contest-code-display-box">
+            <span className="contest-code-text">{createdContest.contestId}</span>
+            <button
+              onClick={handleCopyCode}
+              className="contest-code-copy-btn"
+              title="Copy room code"
+            >
+              <Icon name={copied ? 'check' : 'copy'} size={14} />
+              <span>{copied ? 'Copied!' : 'Copy'}</span>
+            </button>
+          </div>
+
+          <div className="contest-success-actions">
+            <Link
+              to={`/build-team/${createdContest.matchId}?contestId=${createdContest.contestId}`}
+              className="contest-btn-submit"
+            >
+              <Icon name="cricket" size={15} />
+              <span>Select Squad for this Contest</span>
+            </Link>
+            <button
+              onClick={() => { setCreatedContest(null); setFormData(p => ({ ...p, name: '' })); }}
+              className="contest-btn-cancel"
+            >
+              Create Another
+            </button>
           </div>
         </div>
-
-        {/* Creation Form */}
-        <form onSubmit={handleSubmit} className="contest-form-body">
-          {error && (
-            <div className="auth-error-banner">
-              <span className="auth-error-icon">⚠️</span>
-              <div className="auth-error-text">{error}</div>
+      ) : (
+        /* Creation Form Card */
+        <div className="contest-form-card">
+          <div className="contest-hero-banner">
+            <div className="contest-hero-title">
+              <Icon name="trophy" size={24} color="white" />
+              <span>Create a Private Contest</span>
             </div>
-          )}
-
-          {/* Contest Name */}
-          <div className="contest-form-group">
-            <label className="contest-field-label" htmlFor="contest-name">
-              <span>League / Room Title</span>
-              <span className="contest-field-hint">Visible to all participants</span>
-            </label>
-            <div className="contest-input-box">
-              <span className="contest-input-icon">🏆</span>
-              <input
-                id="contest-name"
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                required
-                placeholder="e.g. Champions Super League 2026"
-                className="contest-text-field"
-              />
+            <div className="contest-hero-desc">
+              Set up a custom league for upcoming fixtures. Note: Contests can only be created before the match begins (locks 2 minutes prior to start).
             </div>
           </div>
 
-          {/* Select Match */}
-          <div className="contest-form-group">
-            <label className="contest-field-label" htmlFor="contest-match">
-              <span>Select Match Fixture</span>
-              <span className="contest-field-hint">{matches.length} active fixtures available</span>
-            </label>
-            <div className="contest-input-box">
-              <span className="contest-input-icon">🏏</span>
+          <form onSubmit={handleSubmit} className="contest-form-body">
+            {error && (
+              <div className="auth-error animate-fade-up">
+                <Icon name="shield" size={16} color="#dc2626" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Contest Name */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="contest-name">Contest Room Name</label>
+              <div className="input-wrap">
+                <span className="input-icon"><Icon name="trophy" size={16} /></span>
+                <input
+                  type="text"
+                  id="contest-name"
+                  name="name"
+                  placeholder="e.g., Weekend Champions League"
+                  value={formData.name}
+                  onChange={handleChange}
+                  className="form-input"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Match Selection Dropdown */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="contest-match">Cricket Fixture</label>
               <select
                 id="contest-match"
                 name="matchId"
                 value={formData.matchId}
                 onChange={handleChange}
+                className="form-input"
+                style={{ paddingLeft: 14 }}
                 required
-                className="contest-select-field"
               >
-                <option value="">-- Choose a Match Fixture --</option>
-                {matches.map((m) => (
-                  <option key={m.matchId || m._id} value={m.matchId || m._id}>
-                    {m.teamA} vs {m.teamB} ({m.status || m.date || 'Active'})
-                  </option>
-                ))}
+                <optgroup label="Upcoming Matches (Registration Open)">
+                  {matches.filter(m => !m.matchStarted && !m.matchEnded).map((m) => {
+                    const mId = m.matchId || m._id;
+                    return (
+                      <option key={mId} value={mId}>
+                        🟢 {m.teamA} vs {m.teamB} • {m.venue || 'Scheduled'} ({m.matchType || 'T20'})
+                      </option>
+                    );
+                  })}
+                </optgroup>
+                <optgroup label="Closed Matches (Not Applicable Now)">
+                  {matches.filter(m => m.matchStarted || m.matchEnded).slice(0, 5).map((m) => {
+                    const mId = m.matchId || m._id;
+                    return (
+                      <option key={mId} value={mId} disabled>
+                        🔒 {m.teamA} vs {m.teamB} (Closed: {m.matchEnded ? 'Concluded' : 'Live'})
+                      </option>
+                    );
+                  })}
+                </optgroup>
               </select>
-            </div>
-            {formData.matchId && (
-              <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
-                <Link
-                  to={`/build-team/${formData.matchId}`}
-                  className="top-back-btn"
-                  style={{ fontSize: 12, color: 'var(--color-primary)', background: '#eff6ff', borderColor: '#bfdbfe' }}
-                >
-                  ⚡ Or Draft 11 Players for this match right now →
-                </Link>
-              </div>
-            )}
-          </div>
 
-          {/* Max Participants Section */}
-          <div className="contest-form-group">
-            <label className="contest-field-label">
-              <span>Maximum League Capacity</span>
-              <span className="contest-badge-players">{formData.maxParticipants} Player Slots</span>
-            </label>
-
-            <div className="contest-presets-row">
-              {PARTICIPANT_PRESETS.map((count) => (
-                <button
-                  key={count}
-                  type="button"
-                  onClick={() => setPresetParticipants(count)}
-                  className={`contest-preset-chip${formData.maxParticipants === count ? ' active' : ''}`}
-                >
-                  {count} Players
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Multipliers Rule Highlight Card */}
-          <div className="contest-summary-card">
-            <div className="contest-summary-item">
-              <div className="contest-summary-lbl">Captain Multiplier</div>
-              <div className="contest-summary-val" style={{ color: '#2563eb' }}>2.0× Points ⚡</div>
-            </div>
-            <div className="contest-summary-divider" />
-            <div className="contest-summary-item">
-              <div className="contest-summary-lbl">Vice-Captain Multiplier</div>
-              <div className="contest-summary-val" style={{ color: '#059669' }}>1.5× Points 🌟</div>
-            </div>
-            <div className="contest-summary-divider" />
-            <div className="contest-summary-item">
-              <div className="contest-summary-lbl">Scoring Format</div>
-              <div className="contest-summary-val">Live Ball-by-Ball 📊</div>
-            </div>
-          </div>
-
-          {/* Form Actions */}
-          <div className="contest-actions-row">
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard')}
-              className="contest-btn-cancel"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || !formData.name.trim()}
-              className="contest-btn-submit"
-            >
-              {loading ? (
-                <>
-                  <div className="auth-btn-spinner" />
-                  <span>Creating League…</span>
-                </>
-              ) : (
-                <>
-                  <span>Create Private League</span>
-                  <span>→</span>
-                </>
+              {isMatchClosed && (
+                <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: '#dc2626' }}>
+                  ⚠️ Not applicable now: Contests cannot be created for live or completed matches.
+                </div>
               )}
-            </button>
-          </div>
-        </form>
+            </div>
 
-        {/* Informational Guide */}
-        <div className="contest-guide-section">
-          <h3 className="contest-guide-title">How Private Leagues Work</h3>
-          <div className="contest-steps-grid">
-            {[
-              { step: '01', title: 'Create Room', desc: 'Choose the match and slot capacity for your league.' },
-              { step: '02', title: 'Share Code', desc: 'Send the secret invite code to your friends.' },
-              { step: '03', title: 'Draft 11 & (C/VC)', desc: 'Pick 11 players with 2× Captain and 1.5× Vice-Captain.' },
-              { step: '04', title: 'Live HLD Board', desc: 'Track real-time points and rank positions on the live board.' }
-            ].map((s) => (
-              <div key={s.step} className="contest-step-card">
-                <div className="contest-step-num">{s.step}</div>
-                <div className="contest-step-heading">{s.title}</div>
-                <div className="contest-step-desc">{s.desc}</div>
+            {/* Max Participants */}
+            <div className="form-group">
+              <label className="form-label">Participant Capacity ({formData.maxParticipants} Players)</label>
+              <div className="contest-presets-row">
+                {PARTICIPANT_PRESETS.map((preset) => (
+                  <button
+                    type="button"
+                    key={preset}
+                    onClick={() => setPresetParticipants(preset)}
+                    className={`preset-pill ${formData.maxParticipants === preset ? 'active' : ''}`}
+                  >
+                    {preset} Players
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Success Modal with Shareable Code */}
-      {createdContest && (
-        <div className="logout-modal-overlay">
-          <div className="logout-modal-card animate-pop" style={{ maxWidth: 480 }}>
-            <div className="logout-modal-icon-wrap" style={{ background: '#f0fdf4', color: '#16a34a', borderColor: '#bbf7d0' }}>
-              <Icon name="check" size={28} />
             </div>
 
-            <h3 className="logout-modal-title">League Created! 🎉</h3>
-            <p className="logout-modal-desc">
-              Your private league <strong>"{createdContest.name}"</strong> is live! Share this invite code with your friends:
-            </p>
-
-            <div className="contest-code-display-box">
-              <span className="contest-code-text">{createdContest.contestId}</span>
+            {/* Actions */}
+            <div className="contest-actions-row">
+              <Link to="/" className="contest-btn-cancel">
+                Cancel
+              </Link>
               <button
-                type="button"
-                onClick={handleCopyCode}
-                className="contest-code-copy-btn"
+                type="submit"
+                disabled={loading || isMatchClosed}
+                className="contest-btn-submit"
+                style={{ opacity: (loading || isMatchClosed) ? 0.5 : 1 }}
               >
-                {copied ? '✓ Copied!' : '📋 Copy'}
+                <Icon name="zap" size={15} />
+                <span>{loading ? 'Generating Code…' : 'Create Room Code'}</span>
               </button>
             </div>
-
-            <div className="logout-modal-actions" style={{ marginTop: 20, flexDirection: 'column', gap: 10 }}>
-              <button
-                type="button"
-                className="logout-modal-confirm-btn"
-                style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', width: '100%' }}
-                onClick={() => navigate(`/build-team/${formData.matchId}?contestId=${createdContest.contestId}`)}
-              >
-                🏏 Draft My 11 Players Now →
-              </button>
-              <button
-                type="button"
-                className="logout-modal-cancel-btn"
-                style={{ width: '100%' }}
-                onClick={() => navigate(`/leaderboard/${formData.matchId}?contestId=${createdContest.contestId}`)}
-              >
-                Go to Leaderboard
-              </button>
-            </div>
-          </div>
+          </form>
         </div>
       )}
     </div>
@@ -325,4 +278,3 @@ const ContestCreation = ({ user }) => {
 };
 
 export default ContestCreation;
-

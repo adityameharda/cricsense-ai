@@ -1,52 +1,59 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+export const cleanCricketOvers = (str) => {
+  if (typeof str === 'number') {
+    const s = str.toFixed(1);
+    if (s.endsWith('.6')) {
+      return Math.floor(str) + 1;
+    }
+    return str;
+  }
+  if (!str || typeof str !== 'string') return str;
+  return str.replace(/(\d+)\.6(?=[^\d]|$)/gi, (match, oversNum) => {
+    return String(parseInt(oversNum, 10) + 1);
+  });
+};
+
 /**
- * ScoreDisplay — light theme tabular score with flash animation on update
+ * ScoreDisplay — Tabular score with micro-flash updates and clear typography
  */
 export const ScoreDisplay = ({
   score = '—',
   highlight = false,
   size = 'md',
   className = '',
+  style = {}
 }) => {
   const [flash, setFlash] = useState(false);
   const prevScoreRef = useRef(score);
 
+  const cleanScore = cleanCricketOvers(score);
+
   useEffect(() => {
-    if (prevScoreRef.current !== score && prevScoreRef.current !== undefined) {
+    if (prevScoreRef.current !== score && prevScoreRef.current !== undefined && prevScoreRef.current !== '—') {
       setFlash(true);
-      const t = setTimeout(() => setFlash(false), 600);
+      const t = setTimeout(() => setFlash(false), 700);
       prevScoreRef.current = score;
       return () => clearTimeout(t);
     }
     prevScoreRef.current = score;
   }, [score]);
 
-  const sizeStyles = {
-    sm: { fontSize: 13, fontWeight: 600 },
-    md: { fontSize: 15, fontWeight: 700 },
-    lg: { fontSize: 18, fontWeight: 800 },
-    xl: { fontSize: 24, fontWeight: 900 },
-  };
-
-  const style = {
-    fontFamily: 'var(--font-mono)',
-    fontVariantNumeric: 'tabular-nums',
-    letterSpacing: '-0.02em',
-    padding: '2px 4px',
-    borderRadius: 4,
-    transition: 'background-color 0.3s, color 0.3s',
-    ...(sizeStyles[size] || sizeStyles.md),
-    ...(flash
-      ? { backgroundColor: '#bbf7d0', color: '#065f46' }
-      : highlight
-      ? { color: 'var(--color-primary)' }
-      : { color: 'var(--text-primary)' }),
+  const sizeClasses = {
+    xs: 'score-xs',
+    sm: 'score-sm',
+    md: 'score-md',
+    lg: 'score-lg',
+    xl: 'score-xl',
+    hero: 'score-hero',
   };
 
   return (
-    <span style={style} className={className}>
-      {score || '—'}
+    <span
+      className={`cric-score-display ${sizeClasses[size] || 'score-md'} ${highlight ? 'is-highlight' : ''} ${flash ? 'is-flashing' : ''} ${className}`}
+      style={style}
+    >
+      {cleanScore || '—'}
     </span>
   );
 };

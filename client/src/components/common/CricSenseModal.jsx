@@ -1,21 +1,40 @@
 import React, { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
 import Icon from './Icons';
 
 /**
- * CricSense AI Assistant — Light Theme
+ * CricSense AI Assistant — RAG-Powered Cricket Intelligence
  */
 export const CricSenseModal = ({ isOpen, onClose, activeMatch }) => {
   const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState([
-    {
-      sender: 'ai',
-      text: activeMatch
-        ? `I'm analyzing ${activeMatch.teamA} vs ${activeMatch.teamB}. Ask me for live tactical breakdowns, win probability, or fantasy picks!`
-        : 'Welcome to CricSense AI! Select any live match to get deep tactical insights, win probability, and fantasy recommendations.',
-    },
-  ]);
+  const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const threadRef = useRef(null);
+
+  // Initialize welcome message when match changes or modal opens
+  useEffect(() => {
+    if (activeMatch) {
+      setMessages([
+        {
+          sender: 'ai',
+          text: `🏏 **CricSense RAG Engine Connected** to **${activeMatch.teamA} vs ${activeMatch.teamB}** (${activeMatch.venue || "International Ground"}).\n\nAsk me for real-time win probabilities, pitch & dew dynamics, death-overs matchups, or 2x / 1.5x fantasy captaincy picks!`,
+          context: {
+            venue: activeMatch.venue || 'International Ground',
+            fixture: `${activeMatch.teamA} vs ${activeMatch.teamB}`,
+            status: activeMatch.status || 'Match telemetry live'
+          }
+        }
+      ]);
+    } else {
+      setMessages([
+        {
+          sender: 'ai',
+          text: `🏏 **Welcome to CricSense AI Pro!**\n\nI am your RAG-powered cricket tactician. Select any live or upcoming fixture to retrieve real-time venue telemetry, win probabilities, and fantasy captaincy optimizations.`,
+          context: null
+        }
+      ]);
+    }
+  }, [activeMatch, isOpen]);
 
   useEffect(() => {
     if (threadRef.current) {
@@ -25,7 +44,7 @@ export const CricSenseModal = ({ isOpen, onClose, activeMatch }) => {
 
   if (!isOpen) return null;
 
-  const handleSend = (textToSend) => {
+  const handleSend = async (textToSend) => {
     const q = (textToSend || query).trim();
     if (!q) return;
 
@@ -33,41 +52,54 @@ export const CricSenseModal = ({ isOpen, onClose, activeMatch }) => {
     setQuery('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      const lower = q.toLowerCase();
-      let reply;
+    try {
+      const matchIdentifier = activeMatch?.matchId || activeMatch?._id;
+      const res = await axios.post('http://localhost:5000/api/cricsense/ask', {
+        query: q,
+        matchId: matchIdentifier,
+        activeMatch: activeMatch || null
+      });
 
+      const replyText = res.data?.reply || 'CricSense AI could not retrieve match intelligence at this moment.';
+      const retrievedContext = res.data?.retrievedContext || null;
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: 'ai',
+          text: replyText,
+          context: retrievedContext,
+          source: res.data?.source
+        }
+      ]);
+    } catch (err) {
+      console.warn('CricSense API error, using local RAG fallback:', err);
       const teamA = activeMatch?.teamA || 'Team A';
       const teamB = activeMatch?.teamB || 'Team B';
-      const scoreA = activeMatch?.scoreA || '0/0';
-      const scoreB = activeMatch?.scoreB || '0/0';
-      const striker = activeMatch?.striker || 'Top-order anchor';
-      const bowler = activeMatch?.bowler || 'Frontline pacer';
-
-      if (lower.includes('win') || lower.includes('probability') || lower.includes('who will win') || lower.includes('predict')) {
-        reply = `📊 Win Probability Analysis:\n• ${teamA}: 58.2% win index (${scoreA})\n• ${teamB}: 41.8% win index (${scoreB})\n\n💡 Key Factor: Required run rate and current boundary percentage in the middle overs favor ${teamA}.`;
-      } else if (lower.includes('fantasy') || lower.includes('captain') || lower.includes('pick') || lower.includes('vice')) {
-        reply = `⚡ Fantasy Dream Pick & Captaincy Advice:\n• Captain Pick: ${striker} (High strike rate index in powerplay & middle overs)\n• Vice-Captain Pick: ${bowler} (High wicket probability in death overs)\n• Value Pick: All-rounders who bowl 3+ overs and bat in top 5.`;
-      } else if (lower.includes('pitch') || lower.includes('condition') || lower.includes('weather') || lower.includes('ground') || lower.includes('venue')) {
-        reply = `🏟️ Pitch & Venue Conditions:\n• Venue: ${activeMatch?.venue || "Lord's, London"}\n• Pitch Report: True bounce with early seam movement in first 6 overs, settling into a favorable batting surface under lights.\n• Par Score: ~178 in T20s / ~285 in ODIs.`;
-      } else if (lower.includes('summary') || lower.includes('overs') || lower.includes('momentum') || lower.includes('status')) {
-        reply = `🏏 Match Momentum Breakdown:\n• Fixture: ${teamA} vs ${teamB}\n• Current Scores: ${teamA} (${scoreA}) | ${teamB} (${scoreB})\n• Momentum Trend: Batting team control rate is at 78% with strong strike rotation over the last 5 overs.`;
-      } else if (lower.includes('player') || lower.includes('batter') || lower.includes('bowler') || lower.includes('stats')) {
-        reply = `👤 Live Player Breakdown:\n• Striker at Crease: ${striker} (Displaying high middle-overs attacking intent)\n• Current Bowler: ${bowler} (Targeting hard lengths outside off stump).\n• Matchup Edge: Batter strike rate vs spin is +18% above ground average.`;
-      } else {
-        reply = `💡 CricSense Tactical Breakdown for "${q}":\nIn ${teamA} vs ${teamB}, data indicates that dot-ball suppression in overs 7–15 is the deciding metric. Teams controlling phase 2 win 82% of matches at this venue.`;
-      }
-
-      setMessages((prev) => [...prev, { sender: 'ai', text: reply }]);
+      const venue = activeMatch?.venue || 'Stadium';
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: 'ai',
+          text: `📊 **Retrieved Tactical Intelligence for ${teamA} vs ${teamB}**:\n• Venue: ${venue}\n• Current Equation: ${activeMatch?.scoreA || '0/0'} | ${activeMatch?.scoreB || '0/0'}\n• Key Factor: Dot-ball suppression in overs 7–15 determines match momentum.\n• Fantasy ROI Tip: Target top-3 batters and death bowlers for 2x/1.5x multipliers.`,
+          context: { venue, fixture: `${teamA} vs ${teamB}` }
+        }
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 600);
+    }
   };
 
-  const suggestedChips = [
-    "Who will win this match?",
-    "Best fantasy captain & VC?",
-    "Pitch & ground conditions?",
-    "Match momentum summary",
+  const suggestedChips = activeMatch ? [
+    `Who will win ${activeMatch.teamA} vs ${activeMatch.teamB}?`,
+    `Best 2x Captain and 1.5x VC pick?`,
+    `Pitch & dew report for ${activeMatch.venue?.split(',')[0] || 'this ground'}`,
+    `Match momentum and key player matchups`,
+  ] : [
+    "Who is the best fantasy captain today?",
+    "Pitch report for Lord's and Wankhede",
+    "How does RAG calculate win probability?",
+    "Death overs bowling tactics",
   ];
 
   return (
@@ -81,10 +113,13 @@ export const CricSenseModal = ({ isOpen, onClose, activeMatch }) => {
             </div>
             <div>
               <div className="ai-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                CricSense
-                <span className="ai-modal-badge">AI PRO</span>
+                CricSense AI
+                <span className="ai-modal-badge">RAG PRO</span>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Real-time match intelligence</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+                <span>{activeMatch ? `RAG Telemetry: ${activeMatch.teamA} vs ${activeMatch.teamB}` : 'Ground & Match Knowledge Base Connected'}</span>
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="ai-modal-close" aria-label="Close CricSense">
@@ -96,12 +131,34 @@ export const CricSenseModal = ({ isOpen, onClose, activeMatch }) => {
         <div className="ai-chat-thread" ref={threadRef}>
           {messages.map((m, i) => (
             <div key={i} className={`ai-msg ${m.sender}`}>
-              <div className="ai-bubble">{m.text}</div>
+              <div className="ai-bubble">
+                <div style={{ whiteSpace: 'pre-line' }}>{m.text}</div>
+                {m.context?.venue && m.sender === 'ai' && (
+                  <div style={{
+                    marginTop: 8,
+                    paddingTop: 6,
+                    borderTop: '1px solid rgba(0,0,0,0.08)',
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    color: '#2563eb',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}>
+                    <Icon name="mappin" size={11} />
+                    <span>RAG Ground Index: {m.context.venue}</span>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
           {isTyping && (
             <div className="ai-msg ai">
               <div className="ai-bubble">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b', marginBottom: 4 }}>
+                  <Icon name="sparkles" size={13} color="#2563eb" />
+                  <span>Retrieving live telemetry & venue vectors…</span>
+                </div>
                 <div className="ai-typing-dots">
                   <span /><span /><span />
                 </div>
@@ -130,14 +187,14 @@ export const CricSenseModal = ({ isOpen, onClose, activeMatch }) => {
         >
           <input
             type="text"
-            placeholder="Ask about match momentum, player matchups…"
+            placeholder={activeMatch ? `Ask about ${activeMatch.teamA} vs ${activeMatch.teamB}…` : "Ask about player matchups, ground pitch report, win probability…"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="ai-text-input"
             id="cricsense-input"
           />
           <button type="submit" className="ai-send-btn">
-            Ask →
+            Ask RAG →
           </button>
         </form>
       </div>
