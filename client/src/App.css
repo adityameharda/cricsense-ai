@@ -584,28 +584,54 @@ body {
   animation: pulse 1.8s ease-in-out infinite;
 }
 
-/* ── MATCH CARDS GRID (Matches.jsx) ──────────────── */
+/* ── MATCH CARDS HORIZONTAL CRICBUZZ ROW (Matches.jsx) ── */
 .matches-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  padding: 4px 2px 14px 2px;
+  margin: 0 -2px;
+  scrollbar-width: thin;
+}
+.matches-grid::-webkit-scrollbar {
+  height: 5px;
+}
+.matches-grid::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 9999px;
+}
+.matches-grid::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 9999px;
+}
+.matches-grid::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }
 
 .match-card {
+  flex: 0 0 275px;
+  width: 275px;
+  min-width: 275px;
+  max-width: 275px;
+  scroll-snap-align: start;
   background: #ffffff;
   border: 1.5px solid #cbd5e1;
-  border-radius: 16px;
-  padding: 20px;
+  border-radius: 14px;
+  padding: 12px 14px 10px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
 }
 .match-card:hover {
   border-color: #2563eb;
-  box-shadow: 0 16px 32px -4px rgba(37, 99, 235, 0.16), 0 4px 12px -2px rgba(15, 23, 42, 0.06);
-  transform: translateY(-4px);
+  box-shadow: 0 8px 20px -2px rgba(37, 99, 235, 0.15);
+  transform: translateY(-2px);
 }
 .match-card.is-live {
   border-color: #86efac;
@@ -613,32 +639,36 @@ body {
 }
 .match-card.is-live:hover {
   border-color: #059669;
-  box-shadow: 0 16px 32px -4px rgba(5, 150, 105, 0.18);
+  box-shadow: 0 8px 20px -2px rgba(5, 150, 105, 0.16);
 }
 
 .card-eyebrow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 .card-venue-text {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
+  gap: 4px;
+  font-size: 11px;
   font-weight: 700;
   color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 175px;
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: 4px;
+  padding: 3px 8px;
   border-radius: 9999px;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -646,22 +676,22 @@ body {
 .status-pill.live {
   background: #ecfdf5;
   color: #059669;
-  border: 1.5px solid #a7f3d0;
+  border: 1px solid #a7f3d0;
 }
 .status-pill.final {
   background: #eff6ff;
   color: #2563eb;
-  border: 1.5px solid #bfdbfe;
+  border: 1px solid #bfdbfe;
 }
 .status-pill.upcoming {
   background: #f1f5f9;
   color: #475569;
-  border: 1.5px solid #cbd5e1;
+  border: 1px solid #cbd5e1;
 }
 
 .live-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: #059669;
   animation: pulse 1.5s infinite;
@@ -674,71 +704,78 @@ body {
 .card-teams-block {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 8px 0 14px;
+  gap: 7px;
+  padding: 2px 0 8px;
 }
 .card-team-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 .team-info-side {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
 }
 .team-flag-img {
-  width: 26px;
-  height: 20px;
-  border-radius: 4px;
+  width: 22px;
+  height: 16px;
+  border-radius: 3px;
   object-fit: cover;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 .team-flag-mono {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
   background: #e2e8f0;
   border: 1px solid #cbd5e1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   color: #334155;
 }
 .team-name-label {
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 800;
   color: #0f172a;
+  max-width: 125px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .team-score-value.batting {
   color: #2563eb;
 }
 
 .card-over-strip-wrap {
-  padding: 10px 0;
+  padding: 6px 0;
   border-top: 1px solid #e2e8f0;
   border-bottom: 1px solid #e2e8f0;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .card-status-line {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 5px;
+  font-size: 11.5px;
   font-weight: 700;
   color: #475569;
-  margin-bottom: 16px;
-  line-height: 1.4;
+  margin-bottom: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── SCORECARD & ACTION BUTTONS ON MATCH CARDS ─── */
 .card-actions {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   margin-top: auto;
 }
 .card-btn {
@@ -746,13 +783,14 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 9px 14px;
-  border-radius: 10px;
-  font-size: 13px;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
   font-weight: 800;
+  height: 32px;
   text-decoration: none;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
   border: 1.5px solid transparent;
 }
@@ -4161,15 +4199,28 @@ body {
     border-radius: 9999px !important;
   }
 
-  /* ── Matches Grid on Mobile ─────────────────────── */
+  /* ── Matches Horizontal Row on Mobile (Cricbuzz style) ──── */
   .matches-grid {
-    grid-template-columns: 1fr !important;
-    gap: 14px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    scroll-snap-type: x mandatory !important;
+    gap: 10px !important;
+    padding: 4px 2px 14px 2px !important;
+    margin: 0 -4px !important;
+    scrollbar-width: thin !important;
   }
 
   .match-card {
-    padding: 14px 14px 12px !important;
-    border-radius: 14px !important;
+    flex: 0 0 78vw !important;
+    width: 78vw !important;
+    min-width: 250px !important;
+    max-width: 280px !important;
+    scroll-snap-align: start !important;
+    padding: 10px 12px 10px !important;
+    border-radius: 12px !important;
   }
 
   .card-team-row {
