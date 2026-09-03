@@ -15,8 +15,8 @@ const matchSchema = new mongoose.Schema({
   date: String,
   matchType: String,
   // This stores the players for the Fantasy Team Builder
-  squadA: [String], 
-  squadB: [String],
+  squadA: { type: Array, default: [] }, 
+  squadB: { type: Array, default: [] },
   squadFetched: { type: Boolean, default: false },
   // Live Detailed Stats
   striker: { type: String, default: '' },

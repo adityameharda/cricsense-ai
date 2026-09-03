@@ -106,19 +106,21 @@ export const MatchDetails = ({ user }) => {
     return () => clearInterval(interval);
   }, [matchId, match?.matchStarted, match?.matchEnded]);
 
-  // Fetch squad on demand
+  // Fetch squad as soon as match loads or on tab switch
   useEffect(() => {
-    if (activeTab !== 'squads' || !matchId || realSquad) return;
+    if (!matchId) return;
     const fetchSquad = async () => {
       try {
         const res = await axios.get(`${API_BASE_URL}/api/matches/${matchId}/squad`);
-        setRealSquad(res.data);
+        if (res.data && (res.data.squadA?.length > 0 || res.data.squadB?.length > 0)) {
+          setRealSquad(res.data);
+        }
       } catch (err) {
-        setRealSquad(null);
+        console.warn('Squad fetch:', err.message);
       }
     };
     fetchSquad();
-  }, [activeTab, matchId, realSquad]);
+  }, [matchId, activeTab]);
 
   const isLive = match?.matchStarted && !match?.matchEnded;
   const isEnded = match?.matchEnded;
