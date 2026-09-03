@@ -99,18 +99,18 @@ const MatchCard = React.memo(({ match }) => {
 
       {/* Actions */}
       <div className="card-actions">
-        <Link to={`/match-center/${id}`} className="card-btn primary">
-          <Icon name={isLive ? "zap" : "activity"} size={13} />
-          <span>{isLive ? 'Live Center' : 'Scorecard'}</span>
+        <Link to={`/match-center/${id}`} className="card-btn primary" title={isLive ? 'Live Match Center' : 'View Full Scorecard'}>
+          <Icon name={isLive ? "zap" : "activity"} size={12} />
+          <span>{isLive ? 'Live' : 'Scorecard'}</span>
         </Link>
         {!match.matchStarted && (
-          <Link to={`/build-team/${id}`} className="card-btn secondary">
-            <Icon name="cricket" size={13} />
+          <Link to={`/build-team/${id}`} className="card-btn secondary" title="Build Fantasy Team">
+            <Icon name="cricket" size={12} />
             <span>Fantasy</span>
           </Link>
         )}
-        <Link to={`/leaderboard/${id}`} className="card-btn secondary">
-          <Icon name="trophy" size={13} />
+        <Link to={`/leaderboard/${id}`} className="card-btn secondary" title="Leaderboard">
+          <Icon name="trophy" size={12} />
           <span>Board</span>
         </Link>
       </div>

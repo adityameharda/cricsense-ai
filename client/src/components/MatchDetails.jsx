@@ -312,9 +312,9 @@ export const MatchDetails = ({ user }) => {
           )}
         </div>
 
-        {/* Dual Team Scoreboard Grid */}
+        {/* Dual Team Scoreboard Rows */}
         <div className="match-hero-scoreboard">
-          {/* Team A Box */}
+          {/* Team A Row */}
           <div className={`hero-team-box ${isEnded && match.scoreA > match.scoreB ? 'is-winner' : ''}`}>
             <div className="hero-team-identity">
               {flagA ? (
@@ -335,12 +335,7 @@ export const MatchDetails = ({ user }) => {
             </div>
           </div>
 
-          {/* VS Divider Badge */}
-          <div className="hero-vs-column">
-            <div className="hero-vs-circle">VS</div>
-          </div>
-
-          {/* Team B Box */}
+          {/* Team B Row */}
           <div className={`hero-team-box is-team-b ${isEnded && match.scoreB > match.scoreA ? 'is-winner' : ''}`}>
             <div className="hero-team-identity">
               {flagB ? (
