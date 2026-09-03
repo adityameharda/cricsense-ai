@@ -99,6 +99,59 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
         </div>
       </nav>
 
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="mobile-bottom-nav">
+        <Link
+          to="/"
+          className={`mobile-nav-item ${location.pathname === '/' ? 'active' : ''}`}
+        >
+          <Icon name="cricket" size={20} />
+          <span>Matches</span>
+          {liveCount > 0 && <span className="mobile-nav-badge">{liveCount}</span>}
+        </Link>
+
+        <Link
+          to={user ? "/dashboard" : "/login"}
+          className={`mobile-nav-item ${location.pathname === '/dashboard' || location.pathname === '/create-contest' ? 'active' : ''}`}
+        >
+          <Icon name="trophy" size={20} />
+          <span>Fantasy</span>
+        </Link>
+
+        {/* Center AI action pill */}
+        <button
+          onClick={() => setIsAiOpen(true)}
+          className="mobile-nav-ai-btn"
+          title="Ask CricSense AI"
+        >
+          <div className="mobile-ai-glow" />
+          <Icon name="sparkles" size={20} color="#ffffff" />
+          <span>AI Sense</span>
+        </button>
+
+        <Link
+          to="/leaderboard"
+          className={`mobile-nav-item ${location.pathname.startsWith('/leaderboard') ? 'active' : ''}`}
+        >
+          <Icon name="award" size={20} />
+          <span>Ranks</span>
+        </Link>
+
+        <Link
+          to={user ? "/profile" : "/login"}
+          className={`mobile-nav-item ${location.pathname === '/profile' || location.pathname === '/login' ? 'active' : ''}`}
+        >
+          {user ? (
+            <div className="mobile-user-circle">
+              {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
+            </div>
+          ) : (
+            <Icon name="login" size={20} />
+          )}
+          <span>{user ? 'Profile' : 'Log In'}</span>
+        </Link>
+      </nav>
+
       <CricSenseModal isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} />
       <LogoutModal
         isOpen={isLogoutOpen}

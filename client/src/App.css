@@ -3881,3 +3881,597 @@ body {
   font-weight: 800;
   color: #475569;
 }
+
+/* ===================================================
+   CRICSCORE — MOBILE & TABLET RESPONSIVE SYSTEM
+   =================================================== */
+
+/* ── Mobile Bottom Navigation Bar Base ──────────── */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* ── Body & Container Adjustments ───────────────── */
+  body {
+    padding-bottom: 70px;
+  }
+
+  .main-container {
+    padding: 14px 12px 90px !important;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* ── Top Header on Mobile ───────────────────────── */
+  .cricscore-nav {
+    height: 56px !important;
+    padding: 0 12px !important;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+  }
+
+  .nav-logo-icon {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 8px !important;
+  }
+
+  .nav-logo-text {
+    font-size: 18px !important;
+  }
+
+  .nav-center {
+    display: none !important; /* Moved to bottom navigation bar */
+  }
+
+  .nav-right {
+    gap: 8px !important;
+  }
+
+  .live-pill {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+    gap: 4px !important;
+  }
+
+  .ai-trigger-btn {
+    display: none !important; /* Centerpiece of mobile bottom nav */
+  }
+
+  .user-avatar-pill {
+    padding: 2px 8px 2px 2px !important;
+    gap: 5px !important;
+  }
+
+  .user-avatar-circle {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 11px !important;
+  }
+
+  .user-name-text {
+    font-size: 11.5px !important;
+    max-width: 75px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-logout-btn {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+  }
+  .nav-logout-btn span {
+    display: none;
+  }
+
+  .nav-login-btn {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+    border-radius: 6px !important;
+  }
+
+  /* ── Mobile Bottom Navigation Bar ───────────────── */
+  .mobile-bottom-nav {
+    display: flex !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 60px !important;
+    background: rgba(255, 255, 255, 0.96) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border-top: 1.5px solid #e2e8f0 !important;
+    z-index: 1000 !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    padding: 0 4px calc(env(safe-area-inset-bottom, 0px) + 2px) !important;
+    box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.08) !important;
+  }
+
+  .mobile-nav-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    font-size: 10.5px !important;
+    font-weight: 700 !important;
+    color: #64748b !important;
+    text-decoration: none !important;
+    position: relative !important;
+    flex: 1 !important;
+    padding: 6px 0 !important;
+    transition: all 0.15s ease !important;
+  }
+
+  .mobile-nav-item.active {
+    color: #2563eb !important;
+    font-weight: 800 !important;
+  }
+
+  .mobile-nav-item.active svg {
+    color: #2563eb !important;
+    transform: scale(1.08);
+  }
+
+  .mobile-nav-badge {
+    position: absolute;
+    top: 2px;
+    right: calc(50% - 16px);
+    background: #059669;
+    color: white;
+    font-size: 9px;
+    font-weight: 900;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 1px 5px;
+    border-radius: 9999px;
+    border: 1.5px solid #ffffff;
+  }
+
+  .mobile-user-circle {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2563eb, #059669);
+    color: white;
+    font-size: 10px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobile-nav-ai-btn {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 2px !important;
+    background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%) !important;
+    border: none !important;
+    color: white !important;
+    padding: 8px 14px !important;
+    border-radius: 9999px !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    cursor: pointer !important;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4) !important;
+    transform: translateY(-8px) !important;
+    position: relative !important;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+  .mobile-nav-ai-btn:active {
+    transform: translateY(-5px) scale(0.96) !important;
+  }
+
+  /* ── Matches Page: Hero Featured Match Banner ────── */
+  .hero-match-banner {
+    padding: 16px 14px !important;
+    border-radius: 16px !important;
+    margin-bottom: 20px !important;
+  }
+
+  .hero-eyebrow {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .hero-live-chip, .hero-venue-tag {
+    font-size: 11px !important;
+    padding: 4px 9px !important;
+  }
+
+  .hero-teams-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    padding: 10px 0 !important;
+  }
+
+  .hero-team-side {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    text-align: left !important;
+  }
+  .hero-team-side.is-right {
+    text-align: left !important;
+  }
+
+  .hero-team-name {
+    font-size: 16px !important;
+    font-weight: 800 !important;
+    max-width: 55% !important;
+  }
+
+  .hero-team-score {
+    font-size: 18px !important;
+  }
+
+  .hero-vs-badge {
+    display: none !important;
+  }
+
+  .hero-footer {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    margin-top: 12px !important;
+    padding-top: 12px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.15) !important;
+  }
+
+  .hero-status-text {
+    font-size: 12px !important;
+    justify-content: center !important;
+  }
+
+  .hero-cta-btn {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px 16px !important;
+    font-size: 13px !important;
+  }
+
+  /* ── Filter Tabs on Mobile ──────────────────────── */
+  .filter-segment {
+    display: flex !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    padding: 4px 2px 10px !important;
+    gap: 6px !important;
+    margin-bottom: 16px !important;
+  }
+  .filter-segment::-webkit-scrollbar {
+    display: none;
+  }
+
+  .segment-btn {
+    flex-shrink: 0 !important;
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    border-radius: 9999px !important;
+  }
+
+  /* ── Matches Grid on Mobile ─────────────────────── */
+  .matches-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .match-card {
+    padding: 14px 14px 12px !important;
+    border-radius: 14px !important;
+  }
+
+  .card-team-row {
+    padding: 5px 0 !important;
+  }
+
+  .team-flag-img, .team-flag-mono {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 10px !important;
+  }
+
+  .team-name-label {
+    font-size: 13.5px !important;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .card-actions {
+    flex-direction: row !important;
+    gap: 8px !important;
+    margin-top: 10px !important;
+  }
+
+  .action-btn-primary, .action-btn-secondary {
+    flex: 1 !important;
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+    justify-content: center !important;
+  }
+
+  /* ── Match Details & Live Cockpit Mobile ─────────── */
+  .match-details-container {
+    padding: 0 !important;
+  }
+
+  .match-details-hero {
+    padding: 16px 14px !important;
+    border-radius: 16px !important;
+  }
+
+  .match-details-hero-top {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  .hero-match-scores-row {
+    flex-direction: column !important;
+    gap: 10px !important;
+    padding: 8px 0 !important;
+  }
+
+  .match-tab-bar, .match-nav-tabs, .tab-navigation {
+    display: flex !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    gap: 6px !important;
+    padding: 6px 2px !important;
+    margin-bottom: 16px !important;
+  }
+  .match-tab-bar::-webkit-scrollbar, .match-nav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-btn, .match-tab-item {
+    flex-shrink: 0 !important;
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+  }
+
+  .cockpit-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .cockpit-card {
+    padding: 14px !important;
+    border-radius: 14px !important;
+  }
+
+  /* Tables in Scorecard and Cockpit */
+  .table-responsive-wrapper, .scorecard-table-wrap, .scorecard-container {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    margin-bottom: 12px !important;
+  }
+
+  .scorecard-table, .batsman-table, .bowler-table {
+    min-width: 480px !important;
+    font-size: 12px !important;
+  }
+
+  .scorecard-table th, .scorecard-table td,
+  .batsman-table th, .batsman-table td,
+  .bowler-table th, .bowler-table td {
+    padding: 7px 6px !important;
+  }
+
+  .squads-columns, .squads-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  /* ── Fantasy Team Builder Mobile ────────────────── */
+  .team-builder-container {
+    padding: 0 !important;
+  }
+
+  .builder-sticky-header {
+    position: sticky !important;
+    top: 56px !important;
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+    margin-bottom: 14px !important;
+    z-index: 40 !important;
+  }
+
+  .builder-stats-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  .builder-stat-box {
+    padding: 6px 4px !important;
+    text-align: center !important;
+  }
+  .builder-stat-label {
+    font-size: 9.5px !important;
+  }
+  .builder-stat-value {
+    font-size: 13px !important;
+  }
+
+  .role-tabs {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 4px !important;
+    margin-bottom: 14px !important;
+  }
+
+  .role-tab-btn {
+    padding: 8px 4px !important;
+    font-size: 11px !important;
+    text-align: center !important;
+    justify-content: center !important;
+  }
+
+  .player-row-card {
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .player-info-meta {
+    gap: 6px !important;
+  }
+
+  .player-name-text {
+    font-size: 13px !important;
+  }
+
+  .player-select-btn {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+  }
+
+  .builder-floating-cta {
+    position: fixed !important;
+    bottom: 66px !important;
+    left: 12px !important;
+    right: 12px !important;
+    z-index: 990 !important;
+    padding: 12px 18px !important;
+    border-radius: 14px !important;
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4) !important;
+    justify-content: center !important;
+  }
+
+  /* ── Leaderboard Mobile ─────────────────────────── */
+  .leaderboard-container {
+    padding: 0 !important;
+  }
+
+  .contest-meta-card {
+    padding: 14px !important;
+    border-radius: 14px !important;
+  }
+
+  .contest-meta-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .leaderboard-row {
+    padding: 10px 12px !important;
+  }
+
+  .leaderboard-user-name {
+    font-size: 13px !important;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Dashboard & Profile Mobile ─────────────────── */
+  .dashboard-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .stat-card {
+    padding: 14px 12px !important;
+    border-radius: 14px !important;
+  }
+
+  .stat-value {
+    font-size: 20px !important;
+  }
+
+  .my-contests-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* ── Contest Creation & Predictions Mobile ──────── */
+  .contest-creation-card, .predictions-card {
+    padding: 18px 14px !important;
+    border-radius: 16px !important;
+  }
+
+  .participant-presets-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  /* ── CricSense AI Modal Mobile (Bottom Sheet) ───── */
+  .cricsense-modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .cricsense-modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 88vh !important;
+    max-height: 88vh !important;
+    border-radius: 20px 20px 0 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .cricsense-messages-thread {
+    flex: 1 !important;
+    padding: 12px !important;
+    font-size: 13px !important;
+  }
+
+  .cricsense-input-row {
+    padding: 10px 12px !important;
+  }
+
+  /* ── Auth / Login Card Mobile ───────────────────── */
+  .auth-card-wrapper {
+    padding: 10px 0 !important;
+  }
+
+  .auth-card {
+    padding: 22px 18px !important;
+    border-radius: 18px !important;
+    max-width: 100% !important;
+  }
+}
+
+/* ── Extra Small Phones (<= 400px) ──────────────── */
+@media (max-width: 400px) {
+  .main-container {
+    padding: 10px 8px 90px !important;
+  }
+
+  .hero-team-name {
+    font-size: 14px !important;
+  }
+
+  .hero-team-score {
+    font-size: 16px !important;
+  }
+
+  .team-name-label {
+    font-size: 12.5px !important;
+    max-width: 110px;
+  }
+
+  .builder-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
