@@ -13,6 +13,7 @@ import UserProfile from './components/UserProfile';
 import LiveScore from './components/LiveScore';
 import axios from 'axios';
 import socket from './socket';
+import { API_BASE_URL } from './config';
 import './App.css';
 
 function App() {
@@ -30,7 +31,7 @@ function App() {
 
     const fetchLiveCount = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/matches');
+        const res = await axios.get(`${API_BASE_URL}/api/matches`);
         if (Array.isArray(res.data)) {
           const live = res.data.filter((m) => m.matchStarted && !m.matchEnded).length;
           setLiveCount(live);

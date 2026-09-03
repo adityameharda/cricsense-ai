@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import io from 'socket.io-client';
+import socket from '../socket';
+import { API_BASE_URL } from '../config';
 import Icon from './common/Icons';
 import OverStrip from './common/OverStrip';
 import ScoreDisplay, { cleanCricketOvers } from './common/ScoreDisplay';
 import { formatToIST } from '../utils/formatTime';
-
-const socket = io.connect('http://localhost:5000');
 
 const FLAG_MAP = {
   'india': 'in', 'australia': 'au', 'england': 'gb-eng', 'south africa': 'za',
@@ -39,7 +38,7 @@ export const MatchDetails = ({ user }) => {
   useEffect(() => {
     const fetchMatch = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/matches/${matchId}`);
+        const res = await axios.get(`${API_BASE_URL}/api/matches/${matchId}`);
         setMatch(res.data);
       } catch (err) {
         setError('Match information could not be retrieved.');
@@ -71,7 +70,7 @@ export const MatchDetails = ({ user }) => {
     const fetchScorecard = async () => {
       setScorecardLoading(true);
       try {
-        const res = await axios.get(`http://localhost:5000/api/matches/${matchId}/scorecard`);
+        const res = await axios.get(`${API_BASE_URL}/api/matches/${matchId}/scorecard`);
         setScorecard(res.data);
       } catch (err) {
         setScorecard({ available: false, innings: [] });
@@ -90,7 +89,7 @@ export const MatchDetails = ({ user }) => {
 
     const interval = setInterval(async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/matches/${matchId}/scorecard`);
+        const res = await axios.get(`${API_BASE_URL}/api/matches/${matchId}/scorecard`);
         if (res.data) {
           setScorecard(res.data);
         }
@@ -107,7 +106,7 @@ export const MatchDetails = ({ user }) => {
     if (activeTab !== 'squads' || !matchId || realSquad) return;
     const fetchSquad = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/matches/${matchId}/squad`);
+        const res = await axios.get(`${API_BASE_URL}/api/matches/${matchId}/squad`);
         setRealSquad(res.data);
       } catch (err) {
         setRealSquad(null);

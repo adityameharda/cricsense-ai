@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 import Icon from './common/Icons';
 
 const PARTICIPANT_PRESETS = [2, 4, 6, 8, 10, 15, 20];
@@ -25,7 +26,7 @@ export const ContestCreation = ({ user }) => {
 
   const fetchMatches = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/matches');
+      const response = await axios.get(`${API_BASE_URL}/api/matches`);
       const all = response.data || [];
       // Prioritize upcoming matches where registration is open
       const upcoming = all.filter(m => !m.matchStarted && !m.matchEnded);
@@ -76,7 +77,7 @@ export const ContestCreation = ({ user }) => {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post('http://localhost:5000/api/contests/create', {
+      const response = await axios.post(`${API_BASE_URL}/api/contests/create`, {
         ...formData,
         entryFee: 0 // Free skill-based contests
       }, {

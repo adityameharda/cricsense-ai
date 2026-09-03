@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
 import socket from '../socket';
+import { API_BASE_URL } from '../config';
 import Icon from './common/Icons';
 
 const ROLE_LABELS = { wk: 'WK', bat: 'BAT', ar: 'AR', bowl: 'BOWL' };
@@ -47,11 +48,11 @@ const Leaderboard = ({ user }) => {
     const fetchInitialData = async () => {
       try {
         const resLB = await axios.get(
-          `http://localhost:5000/api/fantasy/leaderboard/${matchId}?contestId=${contestId}`
+          `${API_BASE_URL}/api/fantasy/leaderboard/${matchId}?contestId=${contestId}`
         );
         setLeaderboard(resLB.data || []);
 
-        const resMatch = await axios.get(`http://localhost:5000/api/matches/${matchId}`);
+        const resMatch = await axios.get(`${API_BASE_URL}/api/matches/${matchId}`);
         setMatch(resMatch.data);
       } catch (err) {
         console.error('Leaderboard fetch error:', err.message);

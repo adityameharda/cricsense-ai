@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 
 const Predictions = ({ user }) => {
   const { matchId } = useParams();
@@ -22,8 +23,8 @@ const Predictions = ({ user }) => {
     try {
       const token = localStorage.getItem('token');
       const [matchRes, predictionRes] = await Promise.all([
-        axios.get(`http://localhost:5000/api/matches/${matchId}`),
-        axios.get(`http://localhost:5000/api/predictions/${matchId}`, {
+        axios.get(`${API_BASE_URL}/api/matches/${matchId}`),
+        axios.get(`${API_BASE_URL}/api/predictions/${matchId}`, {
           headers: { Authorization: `Bearer ${token}` }
         })
       ]);
@@ -53,7 +54,7 @@ const Predictions = ({ user }) => {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5000/api/predictions', {
+      await axios.post(`${API_BASE_URL}/api/predictions`, {
         matchId,
         predictions
       }, {

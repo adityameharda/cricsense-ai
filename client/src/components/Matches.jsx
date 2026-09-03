@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import socket from '../socket';
+import { API_BASE_URL } from '../config';
 import Icon from './common/Icons';
 import OverStrip from './common/OverStrip';
 import ScoreDisplay from './common/ScoreDisplay';
@@ -136,7 +137,7 @@ export const Matches = ({ user }) => {
   useEffect(() => {
     const fetchMatches = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/matches');
+        const response = await axios.get(`${API_BASE_URL}/api/matches`);
         setMatches(response.data || []);
       } catch (err) {
         console.error('Error fetching matches:', err);

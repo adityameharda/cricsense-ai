@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 import LogoutModal from './common/LogoutModal';
 import Icon from './common/Icons';
 
@@ -17,7 +18,7 @@ const UserProfile = () => {
           setUser({ username: 'deepak_verma', virtualCoins: 1000, totalWins: 0, totalMatches: 0, bestRank: 0 });
           return;
         }
-        const res = await axios.get('http://localhost:5000/api/auth/profile', {
+        const res = await axios.get(`${API_BASE_URL}/api/auth/profile`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setUser(res.data.user || { username: 'deepak_verma', virtualCoins: 1000, totalWins: 0, totalMatches: 0, bestRank: 0 });

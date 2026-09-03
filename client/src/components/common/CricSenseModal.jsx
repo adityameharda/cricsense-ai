@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../../config';
 import Icon from './Icons';
 
 /**
@@ -54,7 +55,7 @@ export const CricSenseModal = ({ isOpen, onClose, activeMatch }) => {
 
     try {
       const matchIdentifier = activeMatch?.matchId || activeMatch?._id;
-      const res = await axios.post('http://localhost:5000/api/cricsense/ask', {
+      const res = await axios.post(`${API_BASE_URL}/api/cricsense/ask`, {
         query: q,
         matchId: matchIdentifier,
         activeMatch: activeMatch || null

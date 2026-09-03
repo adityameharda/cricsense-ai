@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 import LogoutModal from './common/LogoutModal';
 import Icon from './common/Icons';
 
@@ -29,10 +30,10 @@ const Dashboard = ({ user, onLogout }) => {
     try {
       const token = localStorage.getItem('token');
       const [contestsRes, profileRes] = await Promise.all([
-        axios.get('http://localhost:5000/api/contests/user/contests', {
+        axios.get(`${API_BASE_URL}/api/contests/user/contests`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        axios.get('http://localhost:5000/api/auth/profile', {
+        axios.get(`${API_BASE_URL}/api/auth/profile`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);

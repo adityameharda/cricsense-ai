@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 import Icon from './common/Icons';
 
 const FLAG_MAP = {
@@ -64,13 +65,13 @@ export const TeamBuilder = ({ user }) => {
 
     const fetchMatch = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/matches/${matchId}`);
+        const res = await axios.get(`${API_BASE_URL}/api/matches/${matchId}`);
         setMatch(res.data);
 
         // Fetch fallback squad if not fully populated
         if (!res.data?.squadA?.length || !res.data?.squadB?.length) {
           try {
-            const squadRes = await axios.get(`http://localhost:5000/api/matches/${matchId}/squad`);
+            const squadRes = await axios.get(`${API_BASE_URL}/api/matches/${matchId}/squad`);
             if (squadRes.data) {
               setMatch(prev => ({
                 ...prev,
@@ -149,7 +150,7 @@ export const TeamBuilder = ({ user }) => {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        'http://localhost:5000/api/fantasy/team',
+        `${API_BASE_URL}/api/fantasy/team`,
         {
           matchId,
           players: selectedPlayers,
