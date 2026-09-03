@@ -536,31 +536,96 @@ async function fetchMatchSquads(matchId, matchRecord) {
     }
   }
 
-  // First try extracting from the scorecard
-  const sc = await fetchMatchScorecard(matchId);
   let squadA = [];
   let squadB = [];
 
-  if (sc && sc.innings && sc.innings.length > 0) {
+  // 1. Try fetching from Cricbuzz Match Squads page
+  try {
+    const url = `https://www.cricbuzz.com/cricket-match-squads/${matchId}/match`;
+    const res = await axios.get(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      timeout: 7000
+    });
+
+    const html = res.data;
     const teamAName = matchRecord?.teamA || '';
     const teamBName = matchRecord?.teamB || '';
 
-    sc.innings.forEach(inn => {
-      const allPlayers = [
-        ...inn.batting.map(b => b.batsman),
-        ...(inn.didNotBat || [])
-      ];
+    // Helper to extract player objects from a section of HTML
+    const extractPlayersFromHtml = (htmlChunk) => {
+      const list = [];
+      const linkRegex = /<a[^>]*href="\/profiles\/(\d+)\/([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+      let m;
+      while ((m = linkRegex.exec(htmlChunk)) !== null) {
+        const id = m[1];
+        const inner = m[3];
+        const imgMatch = inner.match(/src="([^"]+)"/);
+        const nameMatch = inner.match(/<span>([^<]+)<\/span>/);
+        const badgeMatch = inner.match(/<span[^>]*>\s*(\([CWK\s]+\))\s*<\/span>/);
+        const roleMatch = inner.match(/<div class="text-cbTxtSec text-xs">([^<]+)<\/div>/);
 
-      if (teamAName && inn.teamName.toLowerCase().includes(teamAName.toLowerCase())) {
-        squadA = allPlayers;
-      } else if (teamBName && inn.teamName.toLowerCase().includes(teamBName.toLowerCase())) {
-        squadB = allPlayers;
-      } else if (squadA.length === 0) {
-        squadA = allPlayers;
-      } else if (squadB.length === 0) {
-        squadB = allPlayers;
+        const name = nameMatch ? nameMatch[1].trim() : '';
+        const badge = badgeMatch ? badgeMatch[1].trim().toUpperCase() : '';
+        const role = roleMatch ? roleMatch[1].trim() : '';
+        let image = imgMatch ? imgMatch[1].replace(/&amp;/g, '&') : '';
+
+        if (name && !name.toLowerCase().includes('playing xi') && !name.toLowerCase().includes('bench')) {
+          const isCaptain = badge.includes('(C)') || badge.includes('C');
+          const isKeeper = badge.includes('(WK)') || badge.includes('WK') || role.toLowerCase().includes('wk');
+          list.push({
+            id,
+            name,
+            image,
+            role,
+            isCaptain,
+            isKeeper,
+            badge
+          });
+        }
       }
-    });
+      return list;
+    };
+
+    // Find headings or boundaries for Team 1 and Team 2 in squads page
+    // Cricbuzz squads pages render Team 1 followed by Team 2
+    const allSquadPlayers = extractPlayersFromHtml(html);
+    if (allSquadPlayers.length >= 11) {
+      // Split between team 1 and team 2
+      // Check if team 1 is teamA or teamB
+      const half = Math.ceil(allSquadPlayers.length / 2);
+      squadA = allSquadPlayers.slice(0, half);
+      squadB = allSquadPlayers.slice(half);
+    }
+  } catch (err) {
+    // continue to fallback
+  }
+
+  // 2. Fallback: extract from scorecard if Cricbuzz squads page didn't provide enough
+  if (squadA.length === 0 && squadB.length === 0) {
+    try {
+      const sc = await fetchMatchScorecard(matchId);
+      if (sc && sc.innings && sc.innings.length > 0) {
+        const teamAName = matchRecord?.teamA || '';
+        const teamBName = matchRecord?.teamB || '';
+
+        sc.innings.forEach(inn => {
+          const allPlayers = [
+            ...inn.batting.map(b => typeof b.batsman === 'object' ? b.batsman : { name: b.batsman, role: 'Batter' }),
+            ...(inn.didNotBat || []).map(p => typeof p === 'object' ? p : { name: p, role: 'Player' })
+          ];
+
+          if (teamAName && inn.teamName.toLowerCase().includes(teamAName.toLowerCase())) {
+            squadA = allPlayers;
+          } else if (teamBName && inn.teamName.toLowerCase().includes(teamBName.toLowerCase())) {
+            squadB = allPlayers;
+          } else if (squadA.length === 0) {
+            squadA = allPlayers;
+          } else if (squadB.length === 0) {
+            squadB = allPlayers;
+          }
+        });
+      }
+    } catch (e) {}
   }
 
   const result = {

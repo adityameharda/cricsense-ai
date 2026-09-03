@@ -6,7 +6,7 @@ import { API_BASE_URL } from '../config';
 import Icon from './common/Icons';
 import OverStrip from './common/OverStrip';
 import ScoreDisplay, { cleanCricketOvers } from './common/ScoreDisplay';
-import { formatToIST } from '../utils/formatTime';
+import { formatToIST, formatDateDisplay } from '../utils/formatTime';
 
 const FLAG_MAP = {
   'india': 'in', 'australia': 'au', 'england': 'gb-eng', 'south africa': 'za',
@@ -31,9 +31,14 @@ export const MatchDetails = ({ user }) => {
   const [realSquad, setRealSquad] = useState(null);
   const [activeTab, setActiveTab] = useState('live');
   const [selectedInningIdx, setSelectedInningIdx] = useState(0);
+  const [expandedTeams, setExpandedTeams] = useState({ teamA: true, teamB: true });
   const [loading, setLoading] = useState(true);
   const [scorecardLoading, setScorecardLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const toggleTeamSquad = (teamKey) => {
+    setExpandedTeams((prev) => ({ ...prev, [teamKey]: !prev[teamKey] }));
+  };
 
   useEffect(() => {
     const fetchMatch = async () => {
@@ -283,7 +288,7 @@ export const MatchDetails = ({ user }) => {
           <div className="match-series-info">
             <span className="match-series-name">{match.venue || 'International Ground'}</span>
             <span className="match-series-dot">•</span>
-            <span>{formatToIST(match.date) || 'Live Match'}</span>
+            <span>{formatDateDisplay(match.date) || 'Live Match'}</span>
           </div>
 
           {isLive ? (
@@ -309,7 +314,7 @@ export const MatchDetails = ({ user }) => {
 
         {/* Dual Team Scoreboard Grid */}
         <div className="match-hero-scoreboard">
-          {/* Team A */}
+          {/* Team A Box */}
           <div className={`hero-team-box ${isEnded && match.scoreA > match.scoreB ? 'is-winner' : ''}`}>
             <div className="hero-team-identity">
               {flagA ? (
@@ -317,7 +322,7 @@ export const MatchDetails = ({ user }) => {
               ) : (
                 <div className="hero-team-monogram">{match.teamA?.slice(0, 2).toUpperCase()}</div>
               )}
-              <div>
+              <div className="hero-team-text-wrap">
                 <div className="hero-team-title">{match.teamA}</div>
                 {isLive && !match.scoreB && <span className="hero-batting-tag"><Icon name="zap" size={10} /> Batting</span>}
               </div>
@@ -335,23 +340,23 @@ export const MatchDetails = ({ user }) => {
             <div className="hero-vs-circle">VS</div>
           </div>
 
-          {/* Team B */}
-          <div className={`hero-team-box ${isEnded && match.scoreB > match.scoreA ? 'is-winner' : ''} is-right`}>
-            <div className="hero-team-score-wrap is-right">
-              <ScoreDisplay score={match.scoreB} size="hero" highlight={isLive && !!match.scoreB} />
-              {match.scoreB && match.scoreB !== '0/0 (0)' && (
-                <div className="hero-crr-label">CRR: {computeCRR(match.scoreB)}</div>
-              )}
-            </div>
-            <div className="hero-team-identity is-right">
-              <div>
-                <div className="hero-team-title">{match.teamB}</div>
-                {isLive && match.scoreB && <span className="hero-batting-tag is-chasing"><Icon name="target" size={10} /> Chasing</span>}
-              </div>
+          {/* Team B Box */}
+          <div className={`hero-team-box is-team-b ${isEnded && match.scoreB > match.scoreA ? 'is-winner' : ''}`}>
+            <div className="hero-team-identity">
               {flagB ? (
                 <img src={flagB} alt={match.teamB} className="hero-team-flag" />
               ) : (
                 <div className="hero-team-monogram">{match.teamB?.slice(0, 2).toUpperCase()}</div>
+              )}
+              <div className="hero-team-text-wrap">
+                <div className="hero-team-title">{match.teamB}</div>
+                {isLive && match.scoreB && <span className="hero-batting-tag is-chasing"><Icon name="target" size={10} /> Chasing</span>}
+              </div>
+            </div>
+            <div className="hero-team-score-wrap">
+              <ScoreDisplay score={match.scoreB} size="hero" highlight={isLive && !!match.scoreB} />
+              {match.scoreB && match.scoreB !== '0/0 (0)' && (
+                <div className="hero-crr-label">CRR: {computeCRR(match.scoreB)}</div>
               )}
             </div>
           </div>
@@ -403,21 +408,58 @@ export const MatchDetails = ({ user }) => {
           <div className="cockpit-container">
             {hasLiveTelemetry || isLive ? (
               <div className="live-cockpit-box animate-fade-up">
-                {/* Live Scores & Run Rate Header */}
+                {/* Live Scores & Run Rate Header with Both Teams */}
                 <div className="live-cockpit-header">
-                  {/* Previous Inning Score */}
-                  {match.scoreA && match.scoreA !== '0/0 (0)' && (
-                    <div className="live-scores-subline">
-                      {match.teamA}: {cleanCricketOvers(match.scoreA)}
+                  <div className="cockpit-dual-scores-row">
+                    {/* Team A Card */}
+                    <div className={`cockpit-team-score-card ${isLive && !match.scoreB ? 'is-batting-now' : ''}`}>
+                      <div className="cockpit-team-info">
+                        {flagA ? (
+                          <img src={flagA} alt={match.teamA} className="cockpit-team-flag" />
+                        ) : (
+                          <div className="cockpit-team-mono">{match.teamA?.slice(0, 2).toUpperCase()}</div>
+                        )}
+                        <div>
+                          <div className="cockpit-team-name">{match.teamA}</div>
+                          {isLive && !match.scoreB && <span className="cockpit-live-tag"><Icon name="zap" size={10} /> Batting</span>}
+                        </div>
+                      </div>
+                      <div className="cockpit-team-score-val">
+                        <ScoreDisplay score={match.scoreA} size="lg" highlight={isLive && !match.scoreB} />
+                        {match.scoreA && match.scoreA !== '0/0 (0)' && (
+                          <span className="cockpit-crr-val">CRR: {computeCRR(match.scoreA)}</span>
+                        )}
+                      </div>
                     </div>
-                  )}
 
-                  {/* Current Inning Score & Run Rates */}
-                  <div className="live-scores-mainline">
-                    <div className="live-score-big">
-                      {match.scoreB && match.scoreB !== '0/0 (0)' ? `${match.teamB} ${cleanCricketOvers(match.scoreB)}` : `${match.teamA} ${cleanCricketOvers(match.scoreA)}`}
+                    {/* Team B Card */}
+                    <div className={`cockpit-team-score-card ${isLive && !!match.scoreB ? 'is-batting-now' : ''}`}>
+                      <div className="cockpit-team-info">
+                        {flagB ? (
+                          <img src={flagB} alt={match.teamB} className="cockpit-team-flag" />
+                        ) : (
+                          <div className="cockpit-team-mono">{match.teamB?.slice(0, 2).toUpperCase()}</div>
+                        )}
+                        <div>
+                          <div className="cockpit-team-name">{match.teamB}</div>
+                          {isLive && match.scoreB && <span className="cockpit-live-tag is-chasing"><Icon name="target" size={10} /> Chasing</span>}
+                        </div>
+                      </div>
+                      <div className="cockpit-team-score-val">
+                        <ScoreDisplay score={match.scoreB} size="lg" highlight={isLive && !!match.scoreB} />
+                        {match.scoreB && match.scoreB !== '0/0 (0)' && (
+                          <span className="cockpit-crr-val">CRR: {computeCRR(match.scoreB)}</span>
+                        )}
+                      </div>
                     </div>
+                  </div>
 
+                  {/* Highlighted Match Equation & Rates */}
+                  <div className="live-equation-banner">
+                    <div className="live-equation-left">
+                      <Icon name="bolt" size={14} color="#2563eb" />
+                      <span>{liveTelemetry?.status || displayStatus || 'Match in progress'}</span>
+                    </div>
                     <div className="live-crr-req-group">
                       <span className="crr-pill">
                         CRR: {liveTelemetry?.currentRunRate || computeCRR(match.scoreB || match.scoreA)}
@@ -429,13 +471,6 @@ export const MatchDetails = ({ user }) => {
                       ) : null}
                     </div>
                   </div>
-
-                  {/* Highlighted Match Equation */}
-                  {(liveTelemetry?.status || displayStatus) && (
-                    <div className="live-equation-text">
-                      {liveTelemetry?.status || displayStatus}
-                    </div>
-                  )}
                 </div>
 
                 {/* Batters & Bowlers Live Tables */}
@@ -924,51 +959,94 @@ export const MatchDetails = ({ user }) => {
 
         {/* ── 3. SQUADS TAB ── */}
         {activeTab === 'squads' && (
-          <div className="squads-two-col animate-fade-up">
+          <div className="squads-accordion-container animate-fade-up">
             {[
-              { team: match.teamA, squad: squadAList, side: 'team-a', flag: flagA },
-              { team: match.teamB, squad: squadBList, side: 'team-b', flag: flagB },
-            ].map(({ team, squad, side, flag }) => (
-              <div key={team} className="squad-panel-card">
-                <div className={`squad-panel-header ${side}`}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              { key: 'teamA', team: match.teamA, squad: squadAList, flag: flagA, isOpen: expandedTeams.teamA },
+              { key: 'teamB', team: match.teamB, squad: squadBList, flag: flagB, isOpen: expandedTeams.teamB },
+            ].map(({ key, team, squad, flag, isOpen }) => (
+              <div key={key} className={`squad-accordion-card ${isOpen ? 'is-open' : ''}`}>
+                {/* Accordion Dropdown Toggle Header */}
+                <button
+                  type="button"
+                  id={`squad-accordion-btn-${key}`}
+                  className="squad-accordion-header-btn"
+                  onClick={() => toggleTeamSquad(key)}
+                  aria-expanded={isOpen}
+                >
+                  <div className="squad-header-left">
                     {flag ? (
                       <img src={flag} alt={team} className="squad-team-flag" />
                     ) : (
                       <div className="squad-team-mono">{team?.slice(0, 2).toUpperCase()}</div>
                     )}
-                    <span className="squad-panel-team-name">{team}</span>
+                    <div className="squad-header-titles">
+                      <span className="squad-accordion-team-name">{team}</span>
+                      <span className="squad-count-chip">
+                        <Icon name="users" size={12} /> {squad.length} Players
+                      </span>
+                    </div>
                   </div>
-                  <span className="squad-count-chip">
-                    <Icon name="users" size={12} /> {squad.length} Players
-                  </span>
-                </div>
 
-                <div className="squad-players-scroll">
-                  {squad.length > 0 ? (
-                    squad.map((p, idx) => {
-                      const playerName = typeof p === 'object' ? (p.name || '') : String(p || '');
-                      const cleanName = playerName.replace(/\s*\([c|C|vc|VC|w|wk|WK|Wk]+\)\s*/g, '').trim();
-                      const isCaptain = playerName.toLowerCase().includes('(c)') || playerName.toLowerCase().includes('(capt)');
-                      const isViceCaptain = playerName.toLowerCase().includes('(vc)');
-                      const role = getPlayerRole(idx, playerName);
+                  <div className="squad-header-right">
+                    <span className="squad-toggle-hint">{isOpen ? 'Hide Squad' : 'Show Squad'}</span>
+                    <div className={`squad-chevron-icon ${isOpen ? 'is-rotated' : ''}`}>
+                      <Icon name="chevron-down" size={18} />
+                    </div>
+                  </div>
+                </button>
 
-                      return (
-                        <div key={idx} className="squad-player-item-row">
-                          <span className="squad-player-index">{String(idx + 1).padStart(2, '0')}</span>
-                          <div className="squad-player-name-wrap">
-                            <span className="squad-player-fullname">{cleanName || playerName}</span>
-                            {isCaptain && <span className="captain-badge-pill">C</span>}
-                            {isViceCaptain && <span className="vc-badge-pill">VC</span>}
-                          </div>
-                          <span className={`role-chip ${role}`}>{ROLE_LABELS[role]}</span>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="squad-empty-text">Squad announcement awaited</div>
-                  )}
-                </div>
+                {/* Dropdown Players Roster */}
+                {isOpen && (
+                  <div className="squad-players-roster animate-fade-up">
+                    {squad.length > 0 ? (
+                      <div className="squad-players-grid">
+                        {squad.map((p, idx) => {
+                          const isObj = typeof p === 'object' && p !== null;
+                          const rawName = isObj ? (p.name || '') : String(p || '');
+                          const cleanName = rawName
+                            .replace(/&#x27;/g, "'")
+                            .replace(/&amp;/g, '&')
+                            .replace(/\s*\([c|C|vc|VC|w|wk|WK|Wk]+\)\s*/g, '')
+                            .trim();
+                          const isCaptain = isObj
+                            ? (p.isCaptain || p.badge?.includes('(C)') || rawName.toLowerCase().includes('(c)'))
+                            : (rawName.toLowerCase().includes('(c)') || rawName.toLowerCase().includes('(capt)'));
+                          const isKeeper = isObj
+                            ? (p.isKeeper || p.badge?.includes('(WK)') || (p.role && p.role.toLowerCase().includes('wk')) || rawName.toLowerCase().includes('(wk)'))
+                            : (rawName.toLowerCase().includes('(wk)') || rawName.toLowerCase().includes('wk'));
+                          const playerImg = isObj && p.image ? p.image : null;
+                          const roleLabel = isObj && p.role
+                            ? p.role
+                            : (ROLE_LABELS[getPlayerRole(idx, rawName)] || 'Player');
+
+                          return (
+                            <div key={idx} className="squad-player-item-card">
+                              <div className="squad-player-identity">
+                                {playerImg ? (
+                                  <img src={playerImg} alt={cleanName} className="squad-player-avatar" />
+                                ) : (
+                                  <div className="squad-player-avatar-mono">
+                                    {cleanName.slice(0, 2).toUpperCase()}
+                                  </div>
+                                )}
+                                <div className="squad-player-meta">
+                                  <div className="squad-player-name-row">
+                                    <span className="squad-player-fullname">{cleanName || rawName}</span>
+                                    {isCaptain && <span className="captain-badge-pill" title="Team Captain">👑 (C)</span>}
+                                    {isKeeper && <span className="wk-badge-pill" title="Wicket Keeper">🧤 (WK)</span>}
+                                  </div>
+                                  <span className="squad-player-role-label">{roleLabel}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="squad-empty-text">Squad announcement awaited for this fixture.</div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

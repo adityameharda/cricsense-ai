@@ -297,6 +297,22 @@ export const Icon = ({ name, className = '', size = 16, color = 'currentColor', 
           <polyline points="15 18 9 12 15 6" />
         </svg>
       );
+    case 'chevron-down':
+    case 'arrow-down':
+    case 'down':
+      return (
+        <svg {...iconProps}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      );
+    case 'chevron-up':
+    case 'arrow-up':
+    case 'up':
+      return (
+        <svg {...iconProps}>
+          <polyline points="18 15 12 9 6 15" />
+        </svg>
+      );
     case 'x':
     case 'close':
       return (

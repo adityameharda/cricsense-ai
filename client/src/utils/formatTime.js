@@ -43,3 +43,18 @@ export function formatToIST(text) {
 
   return formatted;
 }
+
+export function formatDateDisplay(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return dateStr || '';
+  // Convert "2026-09-02" or ISO dates to "2 Sep 2026"
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const parts = dateStr.slice(0, 10).split('-');
+    const y = parts[0];
+    const mIdx = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    const mNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${d} ${mNames[mIdx] || parts[1]} ${y}`;
+  }
+  return formatToIST(dateStr);
+}
+
