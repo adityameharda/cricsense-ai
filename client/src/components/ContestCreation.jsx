@@ -352,9 +352,12 @@ export const ContestCreation = ({ user }) => {
                     padding: '8px 14px',
                     textAlign: 'center'
                   }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: '#1d4ed8' }}>CAPACITY</div>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: '#1e3a8a' }}>
-                      {previewContest.participants?.length || 1} / {previewContest.maxParticipants || 20}
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#1d4ed8' }}>SLOTS</div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: '#1e3a8a' }}>
+                      {previewContest.participants?.length || 1} of max {previewContest.maxParticipants || 20}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#059669', fontWeight: 700, marginTop: 2 }}>
+                      ✓ Starts with present members
                     </div>
                   </div>
                 </div>
@@ -529,7 +532,7 @@ export const ContestCreation = ({ user }) => {
 
             {/* Max Participants */}
             <div className="form-group">
-              <label className="form-label">Participant Capacity ({formData.maxParticipants} Players)</label>
+              <label className="form-label">Maximum Member Limit (Up to {formData.maxParticipants} Members)</label>
               <div className="contest-presets-row">
                 {PARTICIPANT_PRESETS.map((preset) => (
                   <button
@@ -538,9 +541,28 @@ export const ContestCreation = ({ user }) => {
                     onClick={() => setPresetParticipants(preset)}
                     className={`preset-pill ${formData.maxParticipants === preset ? 'active' : ''}`}
                   >
-                    {preset} Players
+                    Up to {preset}
                   </button>
                 ))}
+              </div>
+              <div style={{
+                fontSize: 12.5,
+                color: '#065f46',
+                background: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                borderRadius: 10,
+                padding: '10px 14px',
+                marginTop: 10,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 8,
+                lineHeight: 1.4
+              }}>
+                <Icon name="check-circle" size={16} color="#059669" style={{ marginTop: 2, flexShrink: 0 }} />
+                <div>
+                  <strong style={{ color: '#047857' }}>No Minimum Member Restriction:</strong> Even if you choose {formData.maxParticipants} members, the contest will start automatically with whoever has joined before the match starts (e.g. if only 2 or 3 members join out of {formData.maxParticipants}, the contest starts and scores with them only).
+                </div>
               </div>
             </div>
 
