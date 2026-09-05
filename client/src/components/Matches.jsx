@@ -257,7 +257,7 @@ export const Matches = ({ user }) => {
           </span>
           <div>
             <div style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>Play Fantasy with Friends</div>
-            <div style={{ fontSize: 12, color: '#64748b' }}>Create private leagues or join with your friend's room code</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>Create private leagues or join with your friend's room code. <em>(You must be logged in to create or join a contest.)</em></div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>

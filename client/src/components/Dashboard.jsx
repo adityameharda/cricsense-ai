@@ -66,6 +66,13 @@ const Dashboard = ({ user, onLogout }) => {
 
   const handleQuickJoin = async (e) => {
     e.preventDefault();
+
+    if (!user) {
+      setQuickCodeError('You must be logged in to create or join a contest.');
+      navigate('/login', { state: { returnUrl: '/dashboard' } });
+      return;
+    }
+
     const code = quickCode.trim().toUpperCase();
     if (!code) {
       setQuickCodeError('Please enter a contest code.');
@@ -79,7 +86,6 @@ const Dashboard = ({ user, onLogout }) => {
       // 1. Fetch contest info to know which match it belongs to
       const res = await axios.get(`${API_BASE_URL}/api/contests/${code}`);
       const contest = res.data.contest;
-      const match = res.data.match;
 
       if (!contest) {
         setQuickCodeError(`No contest found with code "${code}".`);
@@ -194,7 +200,7 @@ const Dashboard = ({ user, onLogout }) => {
               Join a Friend's Contest Room Instantly
             </div>
             <div style={{ fontSize: 12.5, color: '#94a3b8', marginTop: 2 }}>
-              Enter the 6-character code (e.g. 0BIHNG) to challenge friends and see your leaderboard rank.
+              Enter the 6-character code (e.g. 0BIHNG) to challenge friends. <em>(You must be logged in to create or join a contest.)</em>
             </div>
           </div>
 
@@ -262,7 +268,7 @@ const Dashboard = ({ user, onLogout }) => {
             </div>
             <div className="empty-state-title">No contests created yet</div>
             <div className="empty-state-desc">
-              Select any live or upcoming match to build your squad and challenge friends in private contests.
+              Select any live or upcoming match to build your squad and challenge friends in private contests. <em>(You must be logged in to create or join a contest.)</em>
             </div>
             <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
               <Link to="/create-contest" className="top-back-btn">

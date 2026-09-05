@@ -77,6 +77,13 @@ export const ContestCreation = ({ user }) => {
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
+
+    if (!user) {
+      setError('You must be logged in to create or join a contest.');
+      navigate('/login', { state: { returnUrl: '/create-contest' } });
+      return;
+    }
+
     if (!formData.name.trim()) {
       setError('Please enter a contest name.');
       return;
@@ -110,7 +117,7 @@ export const ContestCreation = ({ user }) => {
         navigate(`/leaderboard/${formData.matchId}`);
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Contest creation failed. Please choose an upcoming fixture.');
+      setError(err.response?.data?.error || 'You must be logged in to create or join a contest.');
     } finally {
       setLoading(false);
     }
@@ -150,6 +157,12 @@ export const ContestCreation = ({ user }) => {
   };
 
   const handleJoinContest = async () => {
+    if (!user) {
+      setJoinError('You must be logged in to create or join a contest.');
+      navigate('/login', { state: { returnUrl: `/create-contest?tab=join&code=${previewContest?.contestId || ''}` } });
+      return;
+    }
+
     if (!previewContest?.contestId) return;
     setJoiningContest(true);
     setJoinError('');
@@ -169,8 +182,7 @@ export const ContestCreation = ({ user }) => {
         navigate(`/build-team/${mId}?contestId=${previewContest.contestId}`);
       }, 1000);
     } catch (err) {
-      // If match has already started or concluded, offer to navigate straight to leaderboard
-      const errMsg = err.response?.data?.error || 'Failed to join contest room.';
+      const errMsg = err.response?.data?.error || 'You must be logged in to create or join a contest.';
       setJoinError(errMsg);
     } finally {
       setJoiningContest(false);
@@ -189,6 +201,39 @@ export const ContestCreation = ({ user }) => {
           <Icon name="award" size={13} /> Private League Hub
         </span>
       </div>
+
+      {/* Mandatory Auth Banner if not logged in */}
+      {!user && (
+        <div style={{
+          background: '#fffbeb',
+          border: '1.5px solid #fde68a',
+          borderRadius: 14,
+          padding: '12px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
+          marginBottom: 18,
+          color: '#92400e'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Icon name="shield" size={18} color="#d97706" />
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 800 }}>
+                You must be logged in to create or join a contest.
+              </div>
+              <div style={{ fontSize: 12, color: '#b45309' }}>
+                Your registered username will be recorded and shown on the live leaderboard.
+              </div>
+            </div>
+          </div>
+          <Link to="/login" className="top-back-btn" style={{ background: '#d97706', color: 'white', border: 'none', padding: '6px 16px', fontSize: 12 }}>
+            <Icon name="login" size={13} color="white" />
+            <span>Log In / Register</span>
+          </Link>
+        </div>
+      )}
 
       {/* Tabs Header */}
       <div className="contest-tabs-bar" style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
@@ -222,7 +267,7 @@ export const ContestCreation = ({ user }) => {
               <span>Join a Friend's Contest</span>
             </div>
             <div className="contest-hero-desc">
-              Have a 6-character private league code (e.g., <strong>0BIHNG</strong>)? Paste it below to join your friend's leaderboard and lock your squad!
+              Have a 6-character private league code (e.g., <strong>0BIHNG</strong>)? Paste it below to join your friend's leaderboard. <em>(Note: You must be logged in to create or join a contest.)</em>
             </div>
           </div>
 
@@ -411,7 +456,7 @@ export const ContestCreation = ({ user }) => {
               <span>Create a Private Contest</span>
             </div>
             <div className="contest-hero-desc">
-              Set up a custom league for upcoming fixtures and get a 6-character room code to invite friends! Note: Contests can only be created before the match begins.
+              Set up a custom league for upcoming fixtures and get a 6-character room code to invite friends! <em>(Note: You must be logged in to create or join a contest.)</em>
             </div>
           </div>
 
