@@ -10,7 +10,31 @@ const generateToken = (userId) => {
   });
 };
 
-// Middleware to verify JWT token with seamless fallback for guest/demo users
+// Strict middleware requiring authenticated user
+const requireAuth = async (req, res, next) => {
+  try {
+    const authHeader = req.header('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Please log in to perform this action.' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const uId = decoded.userId || decoded._id || decoded.id;
+
+    const user = await User.findById(uId);
+    if (!user) {
+      return res.status(401).json({ error: 'User session expired. Please log in again.' });
+    }
+
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired session. Please log in.' });
+  }
+};
+
+// Lenient middleware for read-only or demo fallbacks
 const authenticateToken = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -79,15 +103,18 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
     const existingUser = await User.findOne({
-      $or: [{ email }, { username }]
+      $or: [{ email: cleanEmail }, { username: cleanUsername }]
     });
 
     if (existingUser) {
       return res.status(400).json({ error: 'User already exists with this email or username' });
     }
 
-    const user = new User({ username, email, password });
+    const user = new User({ username: cleanUsername, email: cleanEmail, password });
     await user.save();
 
     const token = generateToken(user._id);
@@ -113,11 +140,12 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      return res.status(400).json({ error: 'Email/Username and password are required' });
     }
 
+    const clean = email.trim();
     const user = await User.findOne({
-      $or: [{ email }, { username: email }]
+      $or: [{ email: clean.toLowerCase() }, { username: clean }]
     });
 
     if (!user) {
@@ -150,7 +178,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Get user profile
-router.get('/profile', authenticateToken, async (req, res) => {
+router.get('/profile', requireAuth, async (req, res) => {
   try {
     res.json({
       user: {
@@ -168,4 +196,4 @@ router.get('/profile', authenticateToken, async (req, res) => {
   }
 });
 
-module.exports = { router, authenticateToken };
+module.exports = { router, authenticateToken, requireAuth };

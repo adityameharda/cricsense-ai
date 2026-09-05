@@ -3,12 +3,12 @@ const Contest = require('../models/contest');
 const Match = require('../models/match');
 const FantasyTeam = require('../models/fantasyTeam');
 const User = require('../models/user');
-const { authenticateToken } = require('./auth');
+const { requireAuth, authenticateToken } = require('./auth');
 const { checkMatchEntryEligibility } = require('../helpers/matchTiming');
 const router = express.Router();
 
-// Create a new contest (Only allowed before match starts and > 2 min before start)
-router.post('/create', authenticateToken, async (req, res) => {
+// Create a new contest (Only logged-in users, before match starts and > 2 min before start)
+router.post('/create', requireAuth, async (req, res) => {
   try {
     const { name, matchId, entryFee = 0, maxParticipants = 20 } = req.body;
 
@@ -56,8 +56,8 @@ router.post('/create', authenticateToken, async (req, res) => {
   }
 });
 
-// Join a contest (Only allowed before match starts and > 2 min before start)
-router.post('/join/:contestId', authenticateToken, async (req, res) => {
+// Join a contest (Only logged-in users, before match starts and > 2 min before start)
+router.post('/join/:contestId', requireAuth, async (req, res) => {
   try {
     const { contestId } = req.params;
     const cleanContestId = (contestId || '').trim().toUpperCase();
@@ -179,7 +179,7 @@ router.get('/match/:matchId', async (req, res) => {
 });
 
 // Get user's active contests
-router.get('/user/contests', authenticateToken, async (req, res) => {
+router.get('/user/contests', requireAuth, async (req, res) => {
   try {
     const contests = await Contest.find({
       participants: req.user._id

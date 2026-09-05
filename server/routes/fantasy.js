@@ -5,43 +5,15 @@ const MatchPoint = require('../models/matchPoint');
 const Match = require('../models/match');
 const User = require('../models/user');
 const Contest = require('../models/contest');
-const { authenticateToken } = require('./auth');
+const { requireAuth, authenticateToken } = require('./auth');
 const { checkMatchEntryEligibility } = require('../helpers/matchTiming');
 const fantasyPointsService = require('../services/fantasyPointsService');
 
-// Handler for creating / updating a fantasy squad (supports /team and /create-team)
+// Handler for creating / updating a fantasy squad (strictly requires logged in user)
 const handleFantasyTeamSubmission = async (req, res) => {
   try {
     const { matchId, players, captain, viceCaptain, contestId = 'general' } = req.body;
-
-    // Extract userId from JWT auth header or request body
-    let userId = req.body.userId;
-    const authHeader = req.headers['authorization'];
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      const jwt = require('jsonwebtoken');
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-        const uId = decoded?.userId || decoded?._id || decoded?.id;
-        if (uId) userId = uId.toString();
-      } catch (jwtErr) {
-        // Fallback
-      }
-    }
-
-    if (!userId) {
-      let defaultUser = await User.findOne({ username: 'deepak_verma' });
-      if (!defaultUser) {
-        defaultUser = new User({
-          username: 'deepak_verma',
-          email: 'deepak_verma@cricscore.pro',
-          password: 'password123',
-          virtualCoins: 1000,
-        });
-        await defaultUser.save();
-      }
-      userId = defaultUser._id.toString();
-    }
+    const userId = req.user._id.toString();
 
     if (!matchId || !players || players.length !== 11) {
       return res.status(400).json({ error: 'Must provide matchId and exactly 11 players.' });
@@ -84,11 +56,11 @@ const handleFantasyTeamSubmission = async (req, res) => {
         contest = new Contest({
           contestId: finalContestId,
           name: `Private League (${finalContestId})`,
-          createdBy: userId,
+          createdBy: req.user._id,
           matchId: matchIdentifier,
           entryFee: 0,
           maxParticipants: 20,
-          participants: [userId]
+          participants: [req.user._id]
         });
         await contest.save();
       } else {
@@ -107,7 +79,7 @@ const handleFantasyTeamSubmission = async (req, res) => {
         }
 
         if (!contest.participants.some(p => p.toString() === userId.toString())) {
-          contest.participants.push(userId);
+          contest.participants.push(req.user._id);
           await contest.save();
         }
       }
@@ -142,7 +114,8 @@ const handleFantasyTeamSubmission = async (req, res) => {
     res.json({
       message: 'Fantasy squad locked and registered successfully!',
       team,
-      contestId: finalContestId
+      contestId: finalContestId,
+      username: req.user.username
     });
   } catch (err) {
     console.error('Error saving fantasy team:', err);
@@ -151,11 +124,11 @@ const handleFantasyTeamSubmission = async (req, res) => {
 };
 
 // ── POST /api/fantasy/team & POST /api/fantasy/create-team ──────────
-router.post('/team', handleFantasyTeamSubmission);
-router.post('/create-team', handleFantasyTeamSubmission);
+router.post('/team', requireAuth, handleFantasyTeamSubmission);
+router.post('/create-team', requireAuth, handleFantasyTeamSubmission);
 
 // ── GET /api/fantasy/team/:matchId ──────────────────────────────────
-router.get('/team/:matchId', authenticateToken, async (req, res) => {
+router.get('/team/:matchId', requireAuth, async (req, res) => {
   try {
     const { matchId } = req.params;
     const { contestId = 'general' } = req.query;
@@ -216,7 +189,7 @@ router.get('/leaderboard/:matchId', async (req, res) => {
       matchPointMap.set(fantasyPointsService.cleanPlayerName(mp.playerName), mp);
     });
 
-    // Populate user info and breakdown for every team
+    // Populate user info (username, email) for every team
     const enrichedLeaderboard = await Promise.all(
       teams.map(async (t) => {
         let userObj = { _id: t.userId, username: 'Player' };
@@ -224,12 +197,12 @@ router.get('/leaderboard/:matchId', async (req, res) => {
         try {
           if (t.userId && t.userId.length === 24) {
             const u = await User.findById(t.userId).select('username email virtualCoins');
-            if (u) {
+            if (u && u.username) {
               userObj = { _id: u._id.toString(), username: u.username, email: u.email };
             }
           } else if (t.userId) {
             const u = await User.findOne({ username: t.userId }).select('username email');
-            if (u) {
+            if (u && u.username) {
               userObj = { _id: u._id.toString(), username: u.username, email: u.email };
             } else {
               userObj = { _id: t.userId, username: t.userId };
