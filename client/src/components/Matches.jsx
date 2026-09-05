@@ -235,6 +235,43 @@ export const Matches = ({ user }) => {
         </div>
       ) : null}
 
+      {/* Private Contest Banner */}
+      <div style={{
+        background: '#f8fafc',
+        border: '1.5px solid #e2e8f0',
+        borderRadius: 14,
+        padding: '12px 18px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 10,
+        marginBottom: 20
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{
+            width: 32, height: 32, borderRadius: 8, background: '#eff6ff',
+            color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Icon name="trophy" size={16} />
+          </span>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>Play Fantasy with Friends</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>Create private leagues or join with your friend's room code</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Link to="/create-contest" className="top-back-btn" style={{ padding: '6px 14px', fontSize: 12 }}>
+            <Icon name="plus" size={13} />
+            <span>Create Contest</span>
+          </Link>
+          <Link to="/create-contest?tab=join" className="top-back-btn-sub" style={{ padding: '6px 14px', fontSize: 12 }}>
+            <Icon name="key" size={13} />
+            <span>Join with Code</span>
+          </Link>
+        </div>
+      </div>
+
       {/* Filter Segment Control */}
       <div className="filter-segment">
         {FILTERS.map(({ id, label, count, isLive: liveTab, icon }) => (

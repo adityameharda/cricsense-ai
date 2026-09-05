@@ -11,7 +11,7 @@ export const LogoutModal = ({ isOpen, onClose, onConfirm }) => {
           <Icon name="log-out" size={26} />
         </div>
 
-        <h3 className="logout-modal-title">Sign Out of CricScore?</h3>
+        <h3 className="logout-modal-title">Sign Out of Striker?</h3>
         <p className="logout-modal-desc">
           Are you sure you want to log out? You will need to sign in again to manage your fantasy squads and view private contests.
         </p>

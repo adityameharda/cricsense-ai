@@ -60,10 +60,11 @@ router.post('/create', authenticateToken, async (req, res) => {
 router.post('/join/:contestId', authenticateToken, async (req, res) => {
   try {
     const { contestId } = req.params;
-    const contest = await Contest.findOne({ contestId: contestId.toUpperCase() });
+    const cleanContestId = (contestId || '').trim().toUpperCase();
+    const contest = await Contest.findOne({ contestId: cleanContestId });
 
     if (!contest) {
-      return res.status(404).json({ error: 'Contest not found with this code' });
+      return res.status(404).json({ error: `Contest room "${cleanContestId}" not found. Please check the code.` });
     }
 
     if (!contest.isActive) {
@@ -86,7 +87,11 @@ router.post('/join/:contestId', authenticateToken, async (req, res) => {
     const alreadyJoined = contest.participants.some(p => p.toString() === userIdStr);
 
     if (alreadyJoined) {
-      return res.status(400).json({ error: 'You have already joined this contest room.' });
+      return res.json({
+        message: 'You have already joined this contest room.',
+        contest,
+        matchId: contest.matchId
+      });
     }
 
     if (contest.participants.length >= contest.maxParticipants) {
@@ -110,7 +115,8 @@ router.post('/join/:contestId', authenticateToken, async (req, res) => {
 
     res.json({
       message: 'Successfully joined contest room!',
-      contest
+      contest,
+      matchId: contest.matchId
     });
   } catch (error) {
     console.error('Join contest error:', error);
@@ -118,19 +124,41 @@ router.post('/join/:contestId', authenticateToken, async (req, res) => {
   }
 });
 
-// Get contest details
+// Get contest details by 6-char code
 router.get('/:contestId', async (req, res) => {
   try {
     const { contestId } = req.params;
-    const contest = await Contest.findOne({ contestId: contestId.toUpperCase() })
+    const cleanContestId = (contestId || '').trim().toUpperCase();
+
+    const contest = await Contest.findOne({ contestId: cleanContestId })
       .populate('createdBy', 'username')
       .populate('participants', 'username');
 
     if (!contest) {
-      return res.status(404).json({ error: 'Contest not found' });
+      return res.status(404).json({ error: `No contest room found with code "${cleanContestId}".` });
     }
 
-    res.json({ contest });
+    // Fetch associated match
+    const match = await Match.findOne({
+      $or: [{ matchId: contest.matchId }, { _id: contest.matchId.length === 24 ? contest.matchId : null }]
+    });
+
+    res.json({
+      contest,
+      match: match ? {
+        matchId: match.matchId || match._id,
+        teamA: match.teamA,
+        teamB: match.teamB,
+        teamALogo: match.teamALogo,
+        teamBLogo: match.teamBLogo,
+        matchStarted: match.matchStarted,
+        matchEnded: match.matchEnded,
+        status: match.status,
+        venue: match.venue,
+        date: match.date,
+        matchType: match.matchType
+      } : null
+    });
   } catch (error) {
     res.status(500).json({ error: 'Server error fetching contest' });
   }

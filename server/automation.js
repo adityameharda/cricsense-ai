@@ -1,7 +1,8 @@
 const cron = require('node-cron');
-const axios = require('axios');
 const Match = require('./models/match');
+const FantasyTeam = require('./models/fantasyTeam');
 const cricketService = require('./services/cricketLiveService');
+const fantasyPointsService = require('./services/fantasyPointsService');
 require('dotenv').config();
 
 let io = null;
@@ -9,31 +10,6 @@ let isSyncing = false;
 
 const init = (serverIo) => {
   io = serverIo;
-};
-
-const calculateAndDispatchPoints = async (matchId, playerName, diff, type) => {
-  let pointsToAdd = 0;
-  if (type === 'runs') {
-    pointsToAdd = diff * 1; // 1 point per run
-    if (diff === 4) pointsToAdd += 1;
-    if (diff >= 6) pointsToAdd += 2;
-  } else if (type === 'wickets') {
-    pointsToAdd = diff * 20; // 20 points per wicket
-  }
-
-  if (pointsToAdd > 0) {
-    try {
-      const PORT = process.env.PORT || 5000;
-      await axios.post(`http://localhost:${PORT}/api/fantasy/update-score`, {
-        matchId,
-        playerName,
-        pointsToAdd
-      });
-      console.log(`🏆 Awarded ${pointsToAdd} points to ${playerName} for ${diff} ${type}`);
-    } catch (err) {
-      console.error('⚠️ Failed to update fantasy points', err.message);
-    }
-  }
 };
 
 // Periodic authentic synchronization (every 25 seconds)
@@ -47,7 +23,6 @@ cron.schedule('*/25 * * * * *', async () => {
     if (Array.isArray(realMatches) && realMatches.length > 0) {
       for (const rm of realMatches) {
         const query = { matchId: rm.matchId };
-        const oldMatch = await Match.findOne(query);
 
         let liveUpdates = {
           teamA: rm.teamA,
@@ -64,7 +39,7 @@ cron.schedule('*/25 * * * * *', async () => {
           matchType: rm.matchType
         };
 
-        // If match is live in progress, fetch detailed miniscore for live batter & bowler figures
+        // If match is live in progress, fetch detailed miniscore for live figures
         if (rm.matchStarted && !rm.matchEnded) {
           try {
             const sc = await cricketService.fetchMatchScorecard(rm.matchId);
@@ -107,16 +82,12 @@ cron.schedule('*/25 * * * * *', async () => {
           { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
 
-        // Calculate fantasy point deltas
-        if (oldMatch && updatedMatch) {
-          if (oldMatch.striker === updatedMatch.striker && updatedMatch.strikerRuns > oldMatch.strikerRuns) {
-            await calculateAndDispatchPoints(rm.matchId, updatedMatch.striker, updatedMatch.strikerRuns - oldMatch.strikerRuns, 'runs');
-          }
-          if (oldMatch.nonStriker === updatedMatch.nonStriker && updatedMatch.nonStrikerRuns > oldMatch.nonStrikerRuns) {
-            await calculateAndDispatchPoints(rm.matchId, updatedMatch.nonStriker, updatedMatch.nonStrikerRuns - oldMatch.nonStrikerRuns, 'runs');
-          }
-          if (oldMatch.bowler === updatedMatch.bowler && updatedMatch.bowlerWickets > oldMatch.bowlerWickets) {
-            await calculateAndDispatchPoints(rm.matchId, updatedMatch.bowler, updatedMatch.bowlerWickets - oldMatch.bowlerWickets, 'wickets');
+        // Sync fantasy points from authentic scorecard for started or concluded matches
+        if (rm.matchStarted || rm.matchEnded) {
+          try {
+            await fantasyPointsService.calculateAndSyncMatchPoints(rm.matchId, io);
+          } catch (ptsErr) {
+            console.warn(`Point sync warning for ${rm.matchId}:`, ptsErr.message);
           }
         }
 

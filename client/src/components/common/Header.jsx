@@ -24,11 +24,14 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
     <>
       <nav className="cricscore-nav">
         {/* Brand Logo */}
-        <Link to="/" className="nav-logo-link">
+        <Link to="/" className="nav-logo-link" title="Striker (striker.live)">
           <div className="nav-logo-icon">
             <Icon name="cricket" size={20} color="white" />
           </div>
-          <span className="nav-logo-text">Cric<span>Score</span></span>
+          <div className="nav-logo-brand">
+            <span className="nav-logo-text">STRI<span>KER</span></span>
+            <span className="nav-logo-domain">striker.live</span>
+          </div>
         </Link>
 
         {/* Center Nav Links */}

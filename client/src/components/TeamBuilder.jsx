@@ -53,6 +53,8 @@ export const TeamBuilder = ({ user }) => {
   const [captain, setCaptain] = useState('');
   const [viceCaptain, setViceCaptain] = useState('');
   const [contestId, setContestId] = useState('');
+  const [editingContest, setEditingContest] = useState(false);
+  const [contestInput, setContestInput] = useState('');
   const [activeRoleFilter, setActiveRoleFilter] = useState('all');
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,11 @@ export const TeamBuilder = ({ user }) => {
   useEffect(() => {
     const queryParams = new URLSearchParams(location.search);
     const initialContestId = queryParams.get('contestId');
-    if (initialContestId) setContestId(initialContestId.toUpperCase());
+    if (initialContestId) {
+      const clean = initialContestId.toUpperCase();
+      setContestId(clean);
+      setContestInput(clean);
+    }
 
     const fetchMatch = async () => {
       try {
@@ -125,6 +131,13 @@ export const TeamBuilder = ({ user }) => {
     setViceCaptain(prev => (prev === player ? '' : player));
   };
 
+  const handleApplyContestCode = (e) => {
+    e.preventDefault();
+    const clean = contestInput.trim().toUpperCase();
+    setContestId(clean || 'general');
+    setEditingContest(false);
+  };
+
   const handleSubmitTeam = async () => {
     if (isMatchClosed) {
       setSubmitError('Not applicable now. Contests and squad entries close before the match begins (locks 2 min before start).');
@@ -149,6 +162,8 @@ export const TeamBuilder = ({ user }) => {
 
     try {
       const token = localStorage.getItem('token');
+      const finalCId = contestId.trim() || 'general';
+
       await axios.post(
         `${API_BASE_URL}/api/fantasy/team`,
         {
@@ -156,11 +171,12 @@ export const TeamBuilder = ({ user }) => {
           players: selectedPlayers,
           captain,
           viceCaptain,
-          contestId: contestId.trim() || 'general',
+          contestId: finalCId,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      navigate(`/leaderboard/${matchId}?contestId=${contestId.trim() || 'general'}`, {
+
+      navigate(`/leaderboard/${matchId}?contestId=${finalCId}`, {
         state: { successMessage: '🎉 Fantasy squad successfully locked and registered!' },
       });
     } catch (err) {
@@ -220,7 +236,6 @@ export const TeamBuilder = ({ user }) => {
     return activeRoleFilter === 'all' || role === activeRoleFilter;
   });
 
-  // Calculate counts per role across all players
   const allNames = [...squadA.map(getCleanName), ...squadB.map(getCleanName)];
   const roleCounts = {
     all: allNames.length,
@@ -245,6 +260,67 @@ export const TeamBuilder = ({ user }) => {
             <Icon name="cricket" size={13} /> {match.matchType || 'T20'} Fantasy Arena
           </span>
         </div>
+      </div>
+
+      {/* Contest Code Indicator / Switcher Bar */}
+      <div style={{
+        background: contestId && contestId !== 'general' ? '#eff6ff' : '#f8fafc',
+        border: `1.5px solid ${contestId && contestId !== 'general' ? '#93c5fd' : '#e2e8f0'}`,
+        borderRadius: 14,
+        padding: '10px 18px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 10
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Icon name="trophy" size={18} color={contestId && contestId !== 'general' ? '#2563eb' : '#64748b'} />
+          <div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>Target Contest Room: </span>
+            <strong style={{ fontSize: 13.5, color: '#0f172a', textTransform: 'uppercase' }}>
+              {contestId && contestId !== 'general' ? `Private Room (${contestId})` : 'Public Arena (General)'}
+            </strong>
+          </div>
+        </div>
+
+        {editingContest ? (
+          <form onSubmit={handleApplyContestCode} style={{ display: 'flex', gap: 6 }}>
+            <input
+              type="text"
+              placeholder="Room Code (e.g. 0BIHNG)"
+              value={contestInput}
+              onChange={(e) => setContestInput(e.target.value.toUpperCase())}
+              className="form-input"
+              style={{ width: 160, height: 32, fontSize: 12, textTransform: 'uppercase', padding: '0 8px', fontWeight: 800 }}
+            />
+            <button type="submit" className="contest-btn-submit" style={{ padding: '0 12px', height: 32, fontSize: 12 }}>
+              Apply
+            </button>
+            <button type="button" onClick={() => setEditingContest(false)} className="contest-btn-cancel" style={{ padding: '0 10px', height: 32, fontSize: 12 }}>
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => { setContestInput(contestId || ''); setEditingContest(true); }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#2563eb',
+              fontSize: 12.5,
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4
+            }}
+          >
+            <Icon name="key" size={13} color="#2563eb" />
+            <span>{contestId && contestId !== 'general' ? 'Change Room Code' : 'Have a Contest Code?'}</span>
+          </button>
+        )}
       </div>
 
       {/* Match Timing & Status Alert */}

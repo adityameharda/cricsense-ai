@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
 import LogoutModal from './common/LogoutModal';
 import Icon from './common/Icons';
@@ -8,6 +8,7 @@ import Icon from './common/Icons';
 const ACCENT_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed'];
 
 const Dashboard = ({ user, onLogout }) => {
+  const navigate = useNavigate();
   const [contests, setContests] = useState([]);
   const [stats, setStats] = useState({
     totalMatches: 0,
@@ -17,6 +18,9 @@ const Dashboard = ({ user, onLogout }) => {
   });
   const [loadingData, setLoadingData] = useState(true);
   const [isLogoutOpen, setIsLogoutOpen] = useState(false);
+  const [quickCode, setQuickCode] = useState('');
+  const [joiningCode, setJoiningCode] = useState(false);
+  const [quickCodeError, setQuickCodeError] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -60,6 +64,37 @@ const Dashboard = ({ user, onLogout }) => {
     if (onLogout) onLogout();
   };
 
+  const handleQuickJoin = async (e) => {
+    e.preventDefault();
+    const code = quickCode.trim().toUpperCase();
+    if (!code) {
+      setQuickCodeError('Please enter a contest code.');
+      return;
+    }
+
+    setJoiningCode(true);
+    setQuickCodeError('');
+
+    try {
+      // 1. Fetch contest info to know which match it belongs to
+      const res = await axios.get(`${API_BASE_URL}/api/contests/${code}`);
+      const contest = res.data.contest;
+      const match = res.data.match;
+
+      if (!contest) {
+        setQuickCodeError(`No contest found with code "${code}".`);
+        return;
+      }
+
+      // 2. Redirect to Contest Hub Join Tab with this code
+      navigate(`/create-contest?tab=join&code=${code}`);
+    } catch (err) {
+      setQuickCodeError(err.response?.data?.error || `Contest room "${code}" not found.`);
+    } finally {
+      setJoiningCode(false);
+    }
+  };
+
   const statCards = [
     { label: 'Fantasy Points', value: (stats.virtualCoins || 0).toLocaleString(), sub: 'Career Points Balance', accent: ACCENT_COLORS[0], icon: 'coins' },
     { label: 'Total Matches', value: stats.totalMatches, sub: 'Fixtures Participated', accent: ACCENT_COLORS[1], icon: 'cricket' },
@@ -76,7 +111,7 @@ const Dashboard = ({ user, onLogout }) => {
             <span>Welcome back, {user?.username}!</span>
           </div>
           <div className="dashboard-greeting-sub">
-            Track your fantasy rankings, active contests, and cricket intelligence
+            Track your fantasy rankings, active contests, and live cricket performance
           </div>
         </div>
         <button onClick={() => setIsLogoutOpen(true)} className="dashboard-logout-btn">
@@ -130,10 +165,84 @@ const Dashboard = ({ user, onLogout }) => {
           <Icon name="plus" size={16} />
           <span>Create Contest</span>
         </Link>
+        <Link to="/create-contest?tab=join" className="dashboard-action-btn secondary" style={{ background: '#f0fdf4', borderColor: '#86efac', color: '#15803d' }}>
+          <Icon name="key" size={16} color="#15803d" />
+          <span>Join with Code</span>
+        </Link>
         <Link to="/profile" className="dashboard-action-btn secondary">
           <Icon name="user" size={16} />
           <span>My Profile</span>
         </Link>
+      </div>
+
+      {/* Quick Join Contest Card */}
+      <div className="quick-join-card" style={{
+        background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+        borderRadius: 16,
+        padding: '20px 24px',
+        color: 'white',
+        marginBottom: 28,
+        border: '1.5px solid #334155'
+      }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+          <div style={{ flex: '1 1 280px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <Icon name="key" size={14} color="#38bdf8" />
+              <span>Have a Private League Code?</span>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4 }}>
+              Join a Friend's Contest Room Instantly
+            </div>
+            <div style={{ fontSize: 12.5, color: '#94a3b8', marginTop: 2 }}>
+              Enter the 6-character code (e.g. 0BIHNG) to challenge friends and see your leaderboard rank.
+            </div>
+          </div>
+
+          <form onSubmit={handleQuickJoin} style={{ flex: '1 1 300px', display: 'flex', gap: 10 }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <input
+                type="text"
+                maxLength={10}
+                placeholder="Enter Code (e.g. 0BIHNG)"
+                value={quickCode}
+                onChange={(e) => {
+                  setQuickCode(e.target.value.toUpperCase());
+                  if (quickCodeError) setQuickCodeError('');
+                }}
+                className="form-input"
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  borderColor: quickCodeError ? '#f87171' : 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  fontWeight: 800,
+                  height: 44
+                }}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={joiningCode || !quickCode.trim()}
+              className="contest-btn-submit"
+              style={{
+                background: '#38bdf8',
+                color: '#0f172a',
+                padding: '0 20px',
+                height: 44,
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <span>{joiningCode ? 'Joining…' : 'Join Room'}</span>
+              <Icon name="arrow-right" size={14} />
+            </button>
+          </form>
+        </div>
+        {quickCodeError && (
+          <div style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: '#f87171' }}>
+            ⚠️ {quickCodeError}
+          </div>
+        )}
       </div>
 
       {/* Contests Section */}
@@ -153,12 +262,18 @@ const Dashboard = ({ user, onLogout }) => {
             </div>
             <div className="empty-state-title">No contests created yet</div>
             <div className="empty-state-desc">
-              Select any live match to build your squad and challenge friends in private contests.
+              Select any live or upcoming match to build your squad and challenge friends in private contests.
             </div>
-            <Link to="/create-contest" className="top-back-btn" style={{ marginTop: 14 }}>
-              <Icon name="plus" size={14} />
-              <span>Create Your First Contest</span>
-            </Link>
+            <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+              <Link to="/create-contest" className="top-back-btn">
+                <Icon name="plus" size={14} />
+                <span>Create Contest</span>
+              </Link>
+              <Link to="/create-contest?tab=join" className="top-back-btn-sub">
+                <Icon name="key" size={14} />
+                <span>Join with Code</span>
+              </Link>
+            </div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -172,13 +287,15 @@ const Dashboard = ({ user, onLogout }) => {
                     <span><Icon name="coins" size={12} /> {contest.entryFee} coins entry</span>
                   </div>
                 </div>
-                <Link
-                  to={`/leaderboard/${contest.matchId}?contestId=${contest.contestId}`}
-                  className="contest-view-btn"
-                >
-                  <span>View Leaderboard</span>
-                  <Icon name="arrow-right" size={13} />
-                </Link>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Link
+                    to={`/leaderboard/${contest.matchId}?contestId=${contest.contestId}`}
+                    className="contest-view-btn"
+                  >
+                    <span>View Leaderboard</span>
+                    <Icon name="arrow-right" size={13} />
+                  </Link>
+                </div>
               </div>
             ))}
           </div>

@@ -66,7 +66,7 @@ function App() {
     return (
       <div className="app-loading">
         <div className="spinner" />
-        <span>Loading CricScore…</span>
+        <span>Loading Striker…</span>
       </div>
     );
   }

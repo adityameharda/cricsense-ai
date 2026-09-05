@@ -45,7 +45,7 @@ export const Login = ({ onLogin }) => {
 
   const handleQuickDemo = () => {
     setIsLogin(true);
-    setFormData({ username: 'cric_fan', email: 'fan@cricscore.com', password: 'password123' });
+    setFormData({ username: 'cric_fan', email: 'fan@striker.live', password: 'password123' });
     setError('');
   };
 
@@ -59,8 +59,11 @@ export const Login = ({ onLogin }) => {
               <Icon name="cricket" size={22} color="white" />
             </div>
             <div>
-              <span className="auth-brand-name">CricScore</span>
-              <span className="auth-brand-tag">PRO</span>
+              <div className="auth-brand-name-wrap">
+                <span className="auth-brand-name">Striker</span>
+                <span className="auth-brand-tag">PRO</span>
+              </div>
+              <span className="auth-brand-domain">striker.live</span>
             </div>
           </div>
 
@@ -96,7 +99,7 @@ export const Login = ({ onLogin }) => {
               <span className="auth-live-dot" />
               <span>Live match feeds active</span>
             </div>
-            <span>v2.0 Pro Edition</span>
+            <span>v2.0 Pro Edition • striker.live</span>
           </div>
         </div>
 
@@ -119,7 +122,7 @@ export const Login = ({ onLogin }) => {
             </button>
           </div>
 
-          <h3 className="auth-panel-title">{isLogin ? 'Welcome Back!' : 'Join CricScore'}</h3>
+          <h3 className="auth-panel-title">{isLogin ? 'Welcome Back!' : 'Join Striker'}</h3>
           <p className="auth-panel-sub">
             {isLogin ? 'Access your fantasy squads and live predictions' : 'Create an account to start competing'}
           </p>

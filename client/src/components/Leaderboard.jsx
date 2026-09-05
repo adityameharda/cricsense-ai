@@ -34,6 +34,7 @@ const Leaderboard = ({ user }) => {
   const [expandedTeam, setExpandedTeam] = useState(null);
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState(location.state?.successMessage || null);
 
   // Auto-dismiss toast after 4 seconds
@@ -44,27 +45,33 @@ const Leaderboard = ({ user }) => {
     }
   }, [toast]);
 
+  const fetchInitialData = async () => {
+    try {
+      const resLB = await axios.get(
+        `${API_BASE_URL}/api/fantasy/leaderboard/${matchId}?contestId=${contestId}`
+      );
+      setLeaderboard(resLB.data || []);
+
+      const resMatch = await axios.get(`${API_BASE_URL}/api/matches/${matchId}`);
+      setMatch(resMatch.data);
+    } catch (err) {
+      console.error('Leaderboard fetch error:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        const resLB = await axios.get(
-          `${API_BASE_URL}/api/fantasy/leaderboard/${matchId}?contestId=${contestId}`
-        );
-        setLeaderboard(resLB.data || []);
-
-        const resMatch = await axios.get(`${API_BASE_URL}/api/matches/${matchId}`);
-        setMatch(resMatch.data);
-      } catch (err) {
-        console.error('Leaderboard fetch error:', err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchInitialData();
 
     const handleLeaderboardUpdate = (newLeaderboard) => {
-      setLeaderboard(newLeaderboard || []);
+      if (Array.isArray(newLeaderboard)) {
+        if (contestId && contestId !== 'general') {
+          setLeaderboard(newLeaderboard.filter(t => (t.contestId || '').toUpperCase() === contestId.toUpperCase()));
+        } else {
+          setLeaderboard(newLeaderboard.filter(t => !t.contestId || t.contestId === 'general'));
+        }
+      }
     };
 
     socket.on('leaderboard_update', handleLeaderboardUpdate);
@@ -72,6 +79,19 @@ const Leaderboard = ({ user }) => {
       socket.off('leaderboard_update', handleLeaderboardUpdate);
     };
   }, [matchId, contestId]);
+
+  const handleManualSync = async () => {
+    setSyncing(true);
+    try {
+      await axios.post(`${API_BASE_URL}/api/fantasy/sync-points/${matchId}`);
+      await fetchInitialData();
+      setToast('✅ Points updated and synced from official scorecard!');
+    } catch (err) {
+      console.warn('Sync failed:', err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const isLive = match?.matchStarted && !match?.matchEnded;
 
@@ -91,6 +111,22 @@ const Leaderboard = ({ user }) => {
     return <span className="medal-pill default">#{rank}</span>;
   };
 
+  const getUserDisplayName = (entry) => {
+    return entry.user?.username || entry.userId?.username || (typeof entry.userId === 'string' && entry.userId.length !== 24 ? entry.userId : 'Player');
+  };
+
+  const checkIsCurrentUser = (entry) => {
+    if (!user) return false;
+    const currentId = user._id || user.id;
+    const currentName = user.username;
+
+    const entryUId = entry.user?._id || entry.userId?._id || entry.userId;
+    const entryUName = entry.user?.username || entry.userId?.username || entry.userId;
+
+    return (currentId && entryUId && currentId.toString() === entryUId.toString()) ||
+      (currentName && entryUName && currentName.toLowerCase() === String(entryUName).toLowerCase());
+  };
+
   return (
     <div className="leaderboard-page animate-fade-up">
       {/* Top Bar Navigation */}
@@ -99,10 +135,16 @@ const Leaderboard = ({ user }) => {
           <Icon name="arrow-left" size={14} />
           <span>Back to Match Details</span>
         </Link>
-        <Link to="/" className="top-back-btn-sub">
-          <Icon name="cricket" size={13} />
-          <span>All Matches</span>
-        </Link>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Link to="/create-contest?tab=join" className="top-back-btn-sub">
+            <Icon name="key" size={13} />
+            <span>Join Contest</span>
+          </Link>
+          <Link to="/" className="top-back-btn-sub">
+            <Icon name="cricket" size={13} />
+            <span>All Matches</span>
+          </Link>
+        </div>
       </div>
 
       {/* Success Toast */}
@@ -133,11 +175,15 @@ const Leaderboard = ({ user }) => {
               <Icon name="activity" size={14} color="var(--color-primary)" />
               <span>{match.status || (isLive ? 'Live leaderboard scoring in real-time' : 'Final rankings verified')}</span>
             </div>
-            {isLive && (
+            {isLive ? (
               <span className="live-status-pill">
                 <span className="live-dot" /> LIVE SCORING
               </span>
-            )}
+            ) : match.matchEnded ? (
+              <span className="medal-pill gold" style={{ fontSize: 11 }}>
+                <Icon name="trophy" size={12} /> CONCLUDED
+              </span>
+            ) : null}
           </div>
         </div>
       )}
@@ -175,8 +221,9 @@ const Leaderboard = ({ user }) => {
           <div className="podium-grid">
             {top3.map((entry, idx) => {
               const rank = idx + 1;
-              const isCurrentUser = user && (entry.user?._id === user.id || entry.user?.username === user.username);
+              const isCurrentUser = checkIsCurrentUser(entry);
               const rankClass = rank === 1 ? 'gold-podium' : rank === 2 ? 'silver-podium' : 'bronze-podium';
+              const name = getUserDisplayName(entry);
 
               return (
                 <div key={entry._id || idx} className={`podium-card ${rankClass} ${isCurrentUser ? 'current-user-podium' : ''}`}>
@@ -184,10 +231,10 @@ const Leaderboard = ({ user }) => {
                     {getRankBadge(rank)}
                   </div>
                   <div className="podium-avatar-circle">
-                    {entry.user?.username ? entry.user.username.slice(0, 2).toUpperCase() : 'P'}
+                    {name.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="podium-username">
-                    {entry.user?.username || 'Player'}
+                    {name}
                     {isCurrentUser && <span className="podium-you-tag">YOU</span>}
                   </div>
                   <div className="podium-points-val">
@@ -207,9 +254,21 @@ const Leaderboard = ({ user }) => {
             <Icon name="award" size={16} color="var(--color-primary)" />
             <span>Full Standings ({leaderboard.length})</span>
           </div>
-          <span className="standings-auto-refresh">
-            <Icon name="refresh" size={12} /> Auto-Sync Active
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={handleManualSync}
+              disabled={syncing}
+              className="top-back-btn"
+              style={{ padding: '4px 12px', fontSize: 12, border: '1px solid #cbd5e1' }}
+              title="Recalculate and sync points from official scorecard"
+            >
+              <Icon name="refresh" size={12} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
+              <span>{syncing ? 'Syncing…' : 'Sync Points'}</span>
+            </button>
+            <span className="standings-auto-refresh">
+              <Icon name="refresh" size={12} /> Auto-Sync Active
+            </span>
+          </div>
         </div>
 
         {loading ? (
@@ -222,10 +281,14 @@ const Leaderboard = ({ user }) => {
             <div className="empty-state-icon">
               <Icon name="users" size={36} color="var(--color-primary)" />
             </div>
-            <div className="empty-state-title">No Fantasy Squads Yet</div>
-            <div className="empty-state-desc">Build your 11-player squad to appear on the leaderboard.</div>
+            <div className="empty-state-title">No Fantasy Squads in this Contest</div>
+            <div className="empty-state-desc">
+              {contestId !== 'general'
+                ? `No teams have joined private room "${contestId}" yet.`
+                : 'Build your 11-player squad to appear on the leaderboard.'}
+            </div>
             {!match?.matchStarted && (
-              <Link to={`/build-team/${matchId}`} className="top-back-btn" style={{ marginTop: 14 }}>
+              <Link to={`/build-team/${matchId}?contestId=${contestId}`} className="top-back-btn" style={{ marginTop: 14 }}>
                 <Icon name="cricket" size={14} />
                 <span>Build Fantasy Squad</span>
               </Link>
@@ -236,7 +299,8 @@ const Leaderboard = ({ user }) => {
             {leaderboard.map((entry, index) => {
               const rank = index + 1;
               const isExpanded = expandedTeam === (entry._id || index);
-              const isCurrentUser = user && (entry.user?._id === user.id || entry.user?.username === user.username);
+              const isCurrentUser = checkIsCurrentUser(entry);
+              const name = getUserDisplayName(entry);
 
               return (
                 <div key={entry._id || index} className={`standing-item-card ${isCurrentUser ? 'is-current-user' : ''}`}>
@@ -249,11 +313,11 @@ const Leaderboard = ({ user }) => {
                     </div>
                     <div className="standing-user-cell">
                       <div className="standing-avatar-mini">
-                        {entry.user?.username ? entry.user.username.charAt(0).toUpperCase() : 'P'}
+                        {name.charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <div className="standing-username-text">
-                          {entry.user?.username || 'Player'}
+                          {name}
                           {isCurrentUser && <span className="you-pill-mini">YOU</span>}
                         </div>
                         <div className="standing-captain-sub">
@@ -277,7 +341,7 @@ const Leaderboard = ({ user }) => {
                     <div className="standing-expanded-squad animate-fade-up">
                       <div className="expanded-squad-title">
                         <Icon name="users" size={14} color="var(--color-primary)" />
-                        <span>Squad Performance Breakdown</span>
+                        <span>Squad Performance Breakdown ({entry.totalPoints || 0} Total Points)</span>
                       </div>
                       <div className="expanded-players-grid">
                         {(entry.players || []).map((p, pIdx) => {
@@ -286,16 +350,42 @@ const Leaderboard = ({ user }) => {
                           const isVCap = pName === entry.viceCaptain;
                           const role = getPlayerRole(pName);
 
+                          // Find player breakdown score if available
+                          const pBreakdown = (entry.playerBreakdown || []).find(b =>
+                            b.name === pName || (b.name && b.name.toLowerCase() === pName.toLowerCase())
+                          );
+
+                          const playerFinalPts = pBreakdown ? pBreakdown.finalPoints : 0;
+                          const playerBasePts = pBreakdown ? pBreakdown.basePoints : 0;
+                          const stats = pBreakdown?.stats;
+
                           return (
                             <div key={pIdx} className={`squad-player-micro-card ${isCap ? 'is-c' : isVCap ? 'is-vc' : ''}`}>
                               <div className="micro-card-name-row">
                                 <span className="micro-player-name">{pName}</span>
                                 <span className={`role-chip ${role}`}>{ROLE_LABELS[role]}</span>
                               </div>
-                              <div className="micro-multiplier-row">
-                                {isCap && <span className="multiplier-badge cap">2x Captain</span>}
-                                {isVCap && <span className="multiplier-badge vcap">1.5x VC</span>}
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                                <div style={{ fontSize: 13, fontWeight: 900, color: playerFinalPts > 0 ? '#059669' : '#64748b' }}>
+                                  {playerFinalPts} <span style={{ fontSize: 10, fontWeight: 700 }}>pts</span>
+                                  {isCap && <span style={{ fontSize: 10, color: '#b45309', marginLeft: 4 }}>({playerBasePts} × 2)</span>}
+                                  {isVCap && <span style={{ fontSize: 10, color: '#1d4ed8', marginLeft: 4 }}>({playerBasePts} × 1.5)</span>}
+                                </div>
+
+                                <div className="micro-multiplier-row">
+                                  {isCap && <span className="multiplier-badge cap">2x Captain</span>}
+                                  {isVCap && <span className="multiplier-badge vcap">1.5x VC</span>}
+                                </div>
                               </div>
+
+                              {stats && (stats.runs > 0 || stats.wickets > 0 || stats.catches > 0) && (
+                                <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 4, display: 'flex', gap: 6 }}>
+                                  {stats.runs > 0 && <span>🏏 {stats.runs}r</span>}
+                                  {stats.wickets > 0 && <span>🎯 {stats.wickets}w</span>}
+                                  {stats.catches > 0 && <span>🧤 {stats.catches}c</span>}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
