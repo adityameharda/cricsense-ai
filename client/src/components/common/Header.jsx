@@ -1,13 +1,31 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useState, useMemo } from 'react';
+import { Link, useLocation, matchPath } from 'react-router-dom';
 import Icon from './Icons';
 import CricSenseModal from './CricSenseModal';
 import LogoutModal from './LogoutModal';
+import { useMatches } from '../../store/matchesStore';
+
+// Pages that are about one match: CricSense answers about that match by default
+const MATCH_ROUTES = ['/match-center/:matchId', '/build-team/:matchId', '/leaderboard/:matchId', '/match/:matchId', '/predictions/:matchId'];
 
 export const Header = ({ user, onLogout, liveCount = 0 }) => {
   const location = useLocation();
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isLogoutOpen, setIsLogoutOpen] = useState(false);
+  const { matches } = useMatches();
+
+  const pageMatchId = useMemo(() => {
+    for (const pattern of MATCH_ROUTES) {
+      const hit = matchPath(pattern, location.pathname);
+      if (hit) return hit.params.matchId;
+    }
+    return null;
+  }, [location.pathname]);
+
+  const activeMatch = useMemo(() => {
+    if (!pageMatchId) return null;
+    return matches.find((m) => String(m.matchId) === String(pageMatchId) || String(m._id) === String(pageMatchId)) || { matchId: pageMatchId };
+  }, [pageMatchId, matches]);
 
   const navLinks = [
     { name: 'Live Matches', path: '/', icon: 'cricket' },
@@ -155,7 +173,7 @@ export const Header = ({ user, onLogout, liveCount = 0 }) => {
         </Link>
       </nav>
 
-      <CricSenseModal isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} />
+      <CricSenseModal isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} activeMatch={activeMatch} />
       <LogoutModal
         isOpen={isLogoutOpen}
         onClose={() => setIsLogoutOpen(false)}

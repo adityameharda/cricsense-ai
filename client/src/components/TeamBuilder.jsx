@@ -26,19 +26,14 @@ const ROLE_CONFIG = {
   bowl: { label: 'BOWL', name: 'Bowler', color: '#059669', bg: '#ecfdf5', border: '#a7f3d0', icon: 'ball' },
 };
 
-const getPlayerRole = (name = '') => {
-  const n = String(name).toLowerCase();
-  if (n.includes('(wk)') || n.includes('buttler') || n.includes('rizwan') || n.includes('pant') || n.includes('samson') || n.includes('carey') || n.includes('de kock') || n.includes('klaasen') || n.includes('bairstow') || n.includes('gurbaz') || n.includes('pooran') || n.includes('hope') || n.includes('hamilton') || n.includes('clarke') || n.includes('seifert')) {
-    return 'wk';
-  }
-  if (n.includes('kohli') || n.includes('sharma') || n.includes('babar') || n.includes('root') || n.includes('smith') || n.includes('head') || n.includes('warner') || n.includes('gill') || n.includes('williamson') || n.includes('surya') || n.includes('gaikwad') || n.includes('jaiswal') || n.includes('lewis') || n.includes('king') || n.includes('rutherford') || n.includes('perera') || n.includes('kumar')) {
-    return 'bat';
-  }
-  if (n.includes('stokes') || n.includes('pandya') || n.includes('jadeja') || n.includes('maxwell') || n.includes('rashid') || n.includes('shadab') || n.includes('marsh') || n.includes('shakib') || n.includes('santner') || n.includes('russell') || n.includes('narine') || n.includes('ali') || n.includes('cornwall') || n.includes('allen') || n.includes('sams') || n.includes('linde') || n.includes('green')) {
-    return 'ar';
-  }
-  if (n.includes('bumrah') || n.includes('shami') || n.includes('starc') || n.includes('cummins') || n.includes('afridi') || n.includes('rabada') || n.includes('boult') || n.includes('chahal') || n.includes('kuldeep') || n.includes('siraj') || n.includes('wood') || n.includes('archer') || n.includes('nortje') || n.includes('joseph') || n.includes('seales') || n.includes('springer') || n.includes('mujeeb') || n.includes('motie') || n.includes('simmonds') || n.includes('moqim') || n.includes('gore') || n.includes('mahase') || n.includes('phillip')) {
-    return 'bowl';
+// Real role from the Cricbuzz squad data (WK-Batter, Batting Allrounder, Bowler, …)
+const getPlayerRole = (p) => {
+  if (p && typeof p === 'object') {
+    if (p.fantasyRole) return p.fantasyRole;
+    const r = String(p.role || '').toLowerCase();
+    if (p.isKeeper || r.includes('wk')) return 'wk';
+    if (r.includes('allrounder')) return 'ar';
+    if (r.includes('bowler')) return 'bowl';
   }
   return 'bat';
 };
@@ -74,16 +69,16 @@ export const TeamBuilder = ({ user }) => {
         const res = await axios.get(`${API_BASE_URL}/api/matches/${matchId}`);
         setMatch(res.data);
 
-        // Fetch fallback squad if not fully populated
-        if (!res.data?.squadA?.length || !res.data?.squadB?.length) {
+        // Always load the current squads / playing XIs from Cricbuzz via the API
+        {
           try {
             const squadRes = await axios.get(`${API_BASE_URL}/api/matches/${matchId}/squad`);
             if (squadRes.data) {
               setMatch(prev => ({
                 ...prev,
                 ...res.data,
-                squadA: squadRes.data.squadA || prev?.squadA || [],
-                squadB: squadRes.data.squadB || prev?.squadB || [],
+                squadA: squadRes.data.squadA?.length ? squadRes.data.squadA : (prev?.squadA || []),
+                squadB: squadRes.data.squadB?.length ? squadRes.data.squadB : (prev?.squadB || []),
               }));
             }
           } catch (squadErr) {
@@ -102,7 +97,9 @@ export const TeamBuilder = ({ user }) => {
   const squadA = useMemo(() => match?.squadA || [], [match]);
   const squadB = useMemo(() => match?.squadB || [], [match]);
 
-  const isMatchClosed = match ? (match.matchStarted || match.matchEnded) : false;
+  const isMatchClosed = match
+    ? (match.matchStarted || match.matchEnded || (Number(match.startTime) > 0 && Number(match.startTime) - Date.now() <= 2 * 60 * 1000))
+    : false;
 
   const togglePlayer = (player) => {
     if (isMatchClosed) return;
@@ -224,25 +221,16 @@ export const TeamBuilder = ({ user }) => {
   const countTeamASelected = selectedPlayers.filter(p => squadA.some(sa => getCleanName(sa) === p)).length;
   const countTeamBSelected = selectedPlayers.filter(p => squadB.some(sb => getCleanName(sb) === p)).length;
 
-  const filteredSquadA = squadA.filter(p => {
-    const name = getCleanName(p);
-    const role = getPlayerRole(name);
-    return activeRoleFilter === 'all' || role === activeRoleFilter;
-  });
+  const filteredSquadA = squadA.filter(p => activeRoleFilter === 'all' || getPlayerRole(p) === activeRoleFilter);
+  const filteredSquadB = squadB.filter(p => activeRoleFilter === 'all' || getPlayerRole(p) === activeRoleFilter);
 
-  const filteredSquadB = squadB.filter(p => {
-    const name = getCleanName(p);
-    const role = getPlayerRole(name);
-    return activeRoleFilter === 'all' || role === activeRoleFilter;
-  });
-
-  const allNames = [...squadA.map(getCleanName), ...squadB.map(getCleanName)];
+  const allPlayers = [...squadA, ...squadB];
   const roleCounts = {
-    all: allNames.length,
-    wk: allNames.filter(n => getPlayerRole(n) === 'wk').length,
-    bat: allNames.filter(n => getPlayerRole(n) === 'bat').length,
-    ar: allNames.filter(n => getPlayerRole(n) === 'ar').length,
-    bowl: allNames.filter(n => getPlayerRole(n) === 'bowl').length,
+    all: allPlayers.length,
+    wk: allPlayers.filter(p => getPlayerRole(p) === 'wk').length,
+    bat: allPlayers.filter(p => getPlayerRole(p) === 'bat').length,
+    ar: allPlayers.filter(p => getPlayerRole(p) === 'ar').length,
+    bowl: allPlayers.filter(p => getPlayerRole(p) === 'bowl').length,
   };
 
   const isComplete = selectedPlayers.length === 11 && !!captain && !!viceCaptain;
@@ -524,8 +512,9 @@ export const TeamBuilder = ({ user }) => {
               const isSelected = selectedPlayers.includes(name);
               const isC = captain === name;
               const isVC = viceCaptain === name;
-              const role = getPlayerRole(name);
+              const role = getPlayerRole(p);
               const rConf = ROLE_CONFIG[role] || ROLE_CONFIG.bat;
+              const xiNote = p?.playingXI === true ? ' · Playing XI' : p?.playingXI === false ? ' · Bench' : '';
 
               return (
                 <div
@@ -552,7 +541,7 @@ export const TeamBuilder = ({ user }) => {
                     <div className="tb-player-name-block">
                       <div>
                         <div className="tb-player-name">{name}</div>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>{rConf.name}</div>
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>{(p?.role || rConf.name) + xiNote}</div>
                       </div>
                       <span className={`role-chip ${role}`}>{rConf.label}</span>
                     </div>
@@ -601,8 +590,9 @@ export const TeamBuilder = ({ user }) => {
               const isSelected = selectedPlayers.includes(name);
               const isC = captain === name;
               const isVC = viceCaptain === name;
-              const role = getPlayerRole(name);
+              const role = getPlayerRole(p);
               const rConf = ROLE_CONFIG[role] || ROLE_CONFIG.bat;
+              const xiNote = p?.playingXI === true ? ' · Playing XI' : p?.playingXI === false ? ' · Bench' : '';
 
               return (
                 <div
@@ -629,7 +619,7 @@ export const TeamBuilder = ({ user }) => {
                     <div className="tb-player-name-block">
                       <div>
                         <div className="tb-player-name">{name}</div>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>{rConf.name}</div>
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>{(p?.role || rConf.name) + xiNote}</div>
                       </div>
                       <span className={`role-chip ${role}`}>{rConf.label}</span>
                     </div>

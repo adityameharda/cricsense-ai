@@ -1,11 +1,12 @@
 const express = require('express');
 const Prediction = require('../models/prediction');
 const Match = require('../models/match');
-const { authenticateToken } = require('./auth');
+const { requireAuth } = require('./auth');
+const { requireAdmin } = require('../helpers/adminAuth');
 const router = express.Router();
 
 // Submit predictions
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const { matchId, contestId = 'general', predictions } = req.body;
 
@@ -49,7 +50,7 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // Get user's predictions for a match
-router.get('/:matchId', authenticateToken, async (req, res) => {
+router.get('/:matchId', requireAuth, async (req, res) => {
   try {
     const { matchId } = req.params;
     const { contestId = 'general' } = req.query;
@@ -67,7 +68,7 @@ router.get('/:matchId', authenticateToken, async (req, res) => {
 });
 
 // Get all predictions for a match (admin/debug)
-router.get('/match/:matchId/all', async (req, res) => {
+router.get('/match/:matchId/all', requireAdmin, async (req, res) => {
   try {
     const { matchId } = req.params;
     const { contestId = 'general' } = req.query;
@@ -82,7 +83,7 @@ router.get('/match/:matchId/all', async (req, res) => {
 });
 
 // Calculate prediction points (called after match ends)
-router.post('/calculate/:matchId', async (req, res) => {
+router.post('/calculate/:matchId', requireAdmin, async (req, res) => {
   try {
     const { matchId } = req.params;
     const { contestId = 'general', actualResults } = req.body;

@@ -496,14 +496,10 @@ async function calculateAndSyncMatchPoints(matchId, ioInstance = null) {
       await team.save();
     }
 
-    // 7. Emit socket updates for live leaderboards
-    if (ioInstance) {
-      const updatedLeaderboards = await FantasyTeam.find({ matchId: effectiveId })
-        .populate('userId', 'username email')
-        .sort({ totalPoints: -1 });
-
-      ioInstance.to(`match_${effectiveId}`).emit('leaderboard_update', updatedLeaderboards);
-      ioInstance.to(`match_${effectiveId}_general`).emit('leaderboard_update', updatedLeaderboards);
+    // 7. Tell open leaderboards that points changed; they refetch their own contest's
+    // standings (with usernames and player breakdowns) from the API.
+    if (ioInstance && teams.length > 0) {
+      ioInstance.to(`match_${effectiveId}`).emit('leaderboard_update', { matchId: effectiveId });
     }
 
     console.log(`✅ Points calculation completed for match ${effectiveId}: ${playerStatsMap.size} players, ${teams.length} fantasy teams updated.`);
@@ -519,7 +515,30 @@ async function calculateAndSyncMatchPoints(matchId, ioInstance = null) {
   }
 }
 
+// Recalculate at most once every 30 s per match (the scorecard itself is cached for
+// 30 s), and share one in-flight calculation between concurrent callers.
+const SYNC_THROTTLE_MS = 30000;
+const lastSync = new Map();
+const inFlightSync = new Map();
+
+async function syncMatchPointsThrottled(matchId, ioInstance = null) {
+  const key = String(matchId);
+  if (inFlightSync.has(key)) return inFlightSync.get(key);
+  const last = lastSync.get(key);
+  if (last && Date.now() - last.time < SYNC_THROTTLE_MS) return last.result;
+
+  const p = calculateAndSyncMatchPoints(key, ioInstance)
+    .then((result) => {
+      lastSync.set(key, { time: Date.now(), result });
+      return result;
+    })
+    .finally(() => inFlightSync.delete(key));
+  inFlightSync.set(key, p);
+  return p;
+}
+
 module.exports = {
+  syncMatchPointsThrottled,
   cleanPlayerName,
   isSamePlayer,
   calculateBattingPoints,

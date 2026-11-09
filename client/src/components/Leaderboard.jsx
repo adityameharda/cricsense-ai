@@ -7,21 +7,11 @@ import Icon from './common/Icons';
 
 const ROLE_LABELS = { wk: 'WK', bat: 'BAT', ar: 'AR', bowl: 'BOWL' };
 
-const getPlayerRole = (name = '') => {
-  const n = String(name).toLowerCase();
-  if (n.includes('(wk)') || n.includes('buttler') || n.includes('rizwan') || n.includes('pant') || n.includes('samson') || n.includes('carey') || n.includes('de kock') || n.includes('klaasen') || n.includes('bairstow') || n.includes('gurbaz') || n.includes('pooran') || n.includes('hope')) {
-    return 'wk';
-  }
-  if (n.includes('kohli') || n.includes('sharma') || n.includes('babar') || n.includes('root') || n.includes('smith') || n.includes('head') || n.includes('warner') || n.includes('gill') || n.includes('williamson') || n.includes('surya') || n.includes('gaikwad') || n.includes('jaiswal')) {
-    return 'bat';
-  }
-  if (n.includes('stokes') || n.includes('pandya') || n.includes('jadeja') || n.includes('maxwell') || n.includes('rashid') || n.includes('shadab') || n.includes('marsh') || n.includes('shakib') || n.includes('santner') || n.includes('russell') || n.includes('narine')) {
-    return 'ar';
-  }
-  if (n.includes('bumrah') || n.includes('shami') || n.includes('starc') || n.includes('cummins') || n.includes('afridi') || n.includes('rabada') || n.includes('boult') || n.includes('chahal') || n.includes('kuldeep') || n.includes('siraj') || n.includes('wood') || n.includes('archer') || n.includes('nortje')) {
-    return 'bowl';
-  }
-  return 'bat';
+// Real role for a player, from the Cricbuzz squad stored on the match
+const roleFromSquads = (match, name) => {
+  const all = [...(match?.squadA || []), ...(match?.squadB || [])];
+  const p = all.find((x) => (typeof x === 'object' ? x.name : x) === name);
+  return p && typeof p === 'object' ? p.fantasyRole || null : null;
 };
 
 const Leaderboard = ({ user }) => {
@@ -64,18 +54,26 @@ const Leaderboard = ({ user }) => {
   useEffect(() => {
     fetchInitialData();
 
-    const handleLeaderboardUpdate = (newLeaderboard) => {
-      if (Array.isArray(newLeaderboard)) {
-        if (contestId && contestId !== 'general') {
-          setLeaderboard(newLeaderboard.filter(t => (t.contestId || '').toUpperCase() === contestId.toUpperCase()));
-        } else {
-          setLeaderboard(newLeaderboard.filter(t => !t.contestId || t.contestId === 'general'));
-        }
-      }
+    // Points changed on the server: refetch this contest's standings (debounced)
+    let refetchTimer = null;
+    const handleLeaderboardUpdate = () => {
+      clearTimeout(refetchTimer);
+      refetchTimer = setTimeout(async () => {
+        try {
+          const res = await axios.get(`${API_BASE_URL}/api/fantasy/leaderboard/${matchId}?contestId=${contestId}`);
+          setLeaderboard(res.data || []);
+        } catch { /* keep current standings */ }
+      }, 1500);
     };
+    const joinRoom = () => socket.emit('join_match', matchId);
 
+    joinRoom();
+    socket.on('connect', joinRoom); // rejoin after a reconnect
     socket.on('leaderboard_update', handleLeaderboardUpdate);
     return () => {
+      clearTimeout(refetchTimer);
+      socket.emit('leave_match', matchId);
+      socket.off('connect', joinRoom);
       socket.off('leaderboard_update', handleLeaderboardUpdate);
     };
   }, [matchId, contestId]);
@@ -161,12 +159,12 @@ const Leaderboard = ({ user }) => {
           <div className="lb-match-scores">
             <div className="lb-team-block">
               <div className="lb-team-name">{match.teamA}</div>
-              <div className="lb-team-score">{match.scoreA || '—'}</div>
+              <div className="lb-team-score">{!match.matchStarted ? '' : (match.scoreA && match.scoreA !== '0/0 (0)' ? match.scoreA : (match.matchEnded ? '—' : 'Yet to bat'))}</div>
             </div>
             <div className="lb-vs-badge">VS</div>
             <div className="lb-team-block is-right">
               <div className="lb-team-name">{match.teamB}</div>
-              <div className="lb-team-score">{match.scoreB || '—'}</div>
+              <div className="lb-team-score">{!match.matchStarted ? '' : (match.scoreB && match.scoreB !== '0/0 (0)' ? match.scoreB : (match.matchEnded ? '—' : 'Yet to bat'))}</div>
             </div>
           </div>
 
@@ -348,7 +346,7 @@ const Leaderboard = ({ user }) => {
                           const pName = typeof p === 'object' ? (p.name || '') : String(p || '');
                           const isCap = pName === entry.captain;
                           const isVCap = pName === entry.viceCaptain;
-                          const role = getPlayerRole(pName);
+                          const role = roleFromSquads(match, pName);
 
                           // Find player breakdown score if available
                           const pBreakdown = (entry.playerBreakdown || []).find(b =>
@@ -363,7 +361,7 @@ const Leaderboard = ({ user }) => {
                             <div key={pIdx} className={`squad-player-micro-card ${isCap ? 'is-c' : isVCap ? 'is-vc' : ''}`}>
                               <div className="micro-card-name-row">
                                 <span className="micro-player-name">{pName}</span>
-                                <span className={`role-chip ${role}`}>{ROLE_LABELS[role]}</span>
+                                {role && <span className={`role-chip ${role}`}>{ROLE_LABELS[role]}</span>}
                               </div>
 
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>

@@ -7,6 +7,7 @@ import Icon from './common/Icons';
 
 const UserProfile = () => {
   const [user, setUser] = useState(null);
+  const [loadError, setLoadError] = useState('');
   const [isLogoutOpen, setIsLogoutOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -15,16 +16,22 @@ const UserProfile = () => {
       try {
         const token = localStorage.getItem('token');
         if (!token) {
-          setUser({ username: 'deepak_verma', virtualCoins: 1000, totalWins: 0, totalMatches: 0, bestRank: 0 });
+          navigate('/login');
           return;
         }
         const res = await axios.get(`${API_BASE_URL}/api/auth/profile`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setUser(res.data.user || { username: 'deepak_verma', virtualCoins: 1000, totalWins: 0, totalMatches: 0, bestRank: 0 });
+        setUser(res.data.user);
       } catch (err) {
         console.error('Error fetching profile', err);
-        setUser({ username: 'deepak_verma', virtualCoins: 1000, totalWins: 0, totalMatches: 0, bestRank: 0 });
+        if (err.response?.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          navigate('/login');
+          return;
+        }
+        setLoadError('Could not load your profile. Please try again.');
       }
     };
     fetchProfile();
@@ -37,6 +44,14 @@ const UserProfile = () => {
     window.location.href = '/login';
   };
 
+  if (loadError) {
+    return (
+      <div className="empty-state" style={{ maxWidth: 460, margin: '40px auto' }}>
+        <div className="empty-state-title">{loadError}</div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="app-loading">
@@ -46,21 +61,24 @@ const UserProfile = () => {
     );
   }
 
-  const winRate = user.totalMatches > 0 ? Math.round((user.totalWins / user.totalMatches) * 100) : 0;
+  const winRate = user.totalMatches > 0 ? Math.round(((user.totalWins || 0) / user.totalMatches) * 100) : 0;
 
   const statCards = [
-    { label: 'Fantasy Points', value: (user.virtualCoins || 1000).toLocaleString(), sub: 'Career Balance', accent: '#2563eb', icon: 'coins' },
+    { label: 'Fantasy Points', value: (user.virtualCoins ?? 0).toLocaleString(), sub: 'Career Balance', accent: '#2563eb', icon: 'coins' },
     { label: 'Total Wins', value: user.totalWins || 0, sub: 'Contests Won', accent: '#059669', icon: 'trophy' },
     { label: 'Matches Played', value: user.totalMatches || 0, sub: 'Career Fixtures', accent: '#d97706', icon: 'cricket' },
     { label: 'Best Rank', value: user.bestRank ? `#${user.bestRank}` : 'N/A', sub: 'All-Time High', accent: '#7c3aed', icon: 'crown' },
   ];
 
-  const recentMatchesMock = [
-    { match: 'Eng vs Pak', pts: 420, rank: '#1', date: 'Yesterday', result: 'win' },
-    { match: 'Ind vs Aus', pts: 380, rank: '#3', date: '2 days ago', result: 'top' },
-    { match: 'SA vs NZ', pts: 290, rank: '#8', date: '3 days ago', result: 'normal' },
-    { match: 'WI vs SL', pts: 310, rank: '#5', date: '5 days ago', result: 'normal' },
-  ];
+  // Real entries from the server: fixture, contest, points and current rank
+  const recentEntries = (user.recentEntries || []).map((e) => ({
+    matchId: e.matchId,
+    contestId: e.contestId,
+    match: e.fixture,
+    pts: e.points,
+    rank: e.state === 'upcoming' ? `${e.entrants} ${e.entrants === 1 ? 'entry' : 'entries'}` : `#${e.rank} of ${e.entrants}`,
+    date: e.state === 'completed' ? 'Completed' : e.state === 'live' ? 'Live' : 'Upcoming',
+  }));
 
   return (
     <div className="profile-page animate-fade-up">
@@ -91,11 +109,11 @@ const UserProfile = () => {
             <Icon name="award" size={13} />
             <span>FANTASY PRO LEAGUE</span>
           </div>
-          <div className="profile-username">{user.username || 'deepak_verma'}</div>
+          <div className="profile-username">{user.username}</div>
           <div className="profile-meta">
             <span className="profile-meta-item">
               <Icon name="shield" size={14} color="#67e8f9" />
-              <span>Elite Tier (Active)</span>
+              <span>Member since {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—'}</span>
             </span>
             <span className="profile-meta-item">
               <Icon name="calendar" size={14} color="rgba(255,255,255,0.7)" />
@@ -162,11 +180,17 @@ const UserProfile = () => {
         {/* Recent Performance Log Cards */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', marginBottom: 12 }}>
-            Recent Contest Performance (Last 4 Fixtures)
+            Recent Contest Entries
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-            {recentMatchesMock.map((m, idx) => (
-              <div key={idx} style={{
+            {recentEntries.length === 0 && (
+              <div style={{ fontSize: 13, color: '#64748b' }}>
+                You haven't entered any fantasy contests yet. Pick an upcoming match and build your team.
+              </div>
+            )}
+            {recentEntries.map((m, idx) => (
+              <Link key={idx} to={`/leaderboard/${m.matchId}?contestId=${m.contestId}`} style={{
+                textDecoration: 'none',
                 background: '#f8fafc',
                 border: '1.5px solid #cbd5e1',
                 borderRadius: 12,
@@ -178,7 +202,7 @@ const UserProfile = () => {
               }}>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 13.5, color: '#0f172a' }}>{m.match}</div>
-                  <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>{m.date} · Rank {m.rank}</div>
+                  <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>{m.date} · {m.rank.startsWith('#') ? `Rank ${m.rank}` : m.rank}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 900, fontSize: 15, color: '#2563eb' }}>
@@ -186,7 +210,7 @@ const UserProfile = () => {
                   </div>
                   <div style={{ fontSize: 10, fontWeight: 800, color: '#64748b' }}>PTS</div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -197,21 +221,21 @@ const UserProfile = () => {
             <Icon name="zap" size={20} color="#2563eb" />
             <div>
               <div className="feature-box-title">Live Scoring Telemetry</div>
-              <div className="feature-box-desc">Sub-second fantasy rank recalculation with real-time captaincy multipliers.</div>
+              <div className="feature-box-desc">Points update from the live scorecard, with 2x captain and 1.5x vice-captain multipliers.</div>
             </div>
           </div>
           <div className="profile-feature-box">
             <Icon name="shield" size={20} color="#059669" />
             <div>
               <div className="feature-box-title">Verified Fair Play</div>
-              <div className="feature-box-desc">Official CricAPI match telemetry and transparent point breakdown.</div>
+              <div className="feature-box-desc">Scores come from Cricbuzz, with a player-by-player points breakdown.</div>
             </div>
           </div>
           <div className="profile-feature-box">
             <Icon name="sparkles" size={20} color="#d97706" />
             <div>
-              <div className="feature-box-title">CricSense AI Pro</div>
-              <div className="feature-box-desc">Deep tactical intelligence, venue ground metrics, and captaincy tips.</div>
+              <div className="feature-box-title">CricSense</div>
+              <div className="feature-box-desc">Ask about live scores, scorecards, squads and fantasy options, answered from real match data.</div>
             </div>
           </div>
         </div>

@@ -4,7 +4,6 @@ import axios from 'axios';
 import socket from '../socket';
 import { API_BASE_URL } from '../config';
 import Icon from './common/Icons';
-import OverStrip from './common/OverStrip';
 import ScoreDisplay, { cleanCricketOvers } from './common/ScoreDisplay';
 import { formatToIST, formatDateDisplay } from '../utils/formatTime';
 
@@ -55,16 +54,18 @@ export const MatchDetails = ({ user }) => {
     fetchMatch();
     socket.emit('join_match', matchId);
 
-    socket.on('match_update', (updated) => {
+    const onMatchUpdate = (updated) => {
       const updatedId = updated.matchId || updated._id;
       if (updatedId === matchId) {
         setMatch((prev) => ({ ...prev, ...updated }));
       }
-    });
+    };
+    socket.on('match_update', onMatchUpdate);
 
     return () => {
       socket.emit('leave_match', matchId);
-      socket.off('match_update');
+      // Remove only this listener; the shared matches store keeps its own.
+      socket.off('match_update', onMatchUpdate);
     };
   }, [matchId]);
 
@@ -77,6 +78,8 @@ export const MatchDetails = ({ user }) => {
       try {
         const res = await axios.get(`${API_BASE_URL}/api/matches/${matchId}/scorecard`);
         setScorecard(res.data);
+        // The server re-checks the real match state on Cricbuzz with every scorecard request
+        if (res.data?.matchUpdate) setMatch((prev) => (prev ? { ...prev, ...res.data.matchUpdate } : prev));
       } catch (err) {
         setScorecard({ available: false, innings: [] });
       } finally {
@@ -97,6 +100,7 @@ export const MatchDetails = ({ user }) => {
         const res = await axios.get(`${API_BASE_URL}/api/matches/${matchId}/scorecard`);
         if (res.data) {
           setScorecard(res.data);
+          if (res.data.matchUpdate) setMatch((prev) => (prev ? { ...prev, ...res.data.matchUpdate } : prev));
         }
       } catch (e) {
         // silent fail on poll
@@ -210,20 +214,10 @@ export const MatchDetails = ({ user }) => {
     return <span className="econ-badge econ-high">{econNum}</span>;
   };
 
-  // Helper for Player Roles in squad roster
-  const getPlayerRole = (idx, playerName = '') => {
-    const name = playerName.toLowerCase();
-    if (name.includes('(wk)') || name.includes('wk') || idx === 2) return 'wk';
-    if (idx < 4) return 'bat';
-    if (idx < 7) return 'ar';
-    return 'bowl';
-  };
-
   // Helper for rendering recent ball-by-ball deliveries with prominent red Wicket badges
   const renderRecentDeliveries = (recentStr) => {
-    if (!recentStr || typeof recentStr !== 'string') {
-      return <OverStrip balls={['1', '•', '4', 'W', '6', '1']} label="Recent" />;
-    }
+    // Only real ball-by-ball data from the live feed; show nothing when it's unavailable
+    if (!recentStr || typeof recentStr !== 'string') return null;
     const tokens = recentStr.trim().split(/\s+/).filter(Boolean);
     if (tokens.length === 0) return null;
 
@@ -1012,9 +1006,8 @@ export const MatchDetails = ({ user }) => {
                             ? (p.isKeeper || p.badge?.includes('(WK)') || (p.role && p.role.toLowerCase().includes('wk')) || rawName.toLowerCase().includes('(wk)'))
                             : (rawName.toLowerCase().includes('(wk)') || rawName.toLowerCase().includes('wk'));
                           const playerImg = isObj && p.image ? p.image : null;
-                          const roleLabel = isObj && p.role
-                            ? p.role
-                            : (ROLE_LABELS[getPlayerRole(idx, rawName)] || 'Player');
+                          const roleLabel = (isObj && p.role ? p.role : 'Player') +
+                            (isObj && p.playingXI === true ? ' · Playing XI' : isObj && p.playingXI === false ? ' · Bench' : '');
 
                           return (
                             <div key={idx} className="squad-player-item-card">

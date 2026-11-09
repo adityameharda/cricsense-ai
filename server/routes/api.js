@@ -1,13 +1,33 @@
 const express = require('express');
 const router = express.Router();
 const Match = require('../models/match');
-const axios = require('axios');
+const { requireAdmin } = require('../helpers/adminAuth');
 
-// Get all matches
+// Get all matches (lightweight list for the home page / pickers).
+// Squads are excluded (they are only needed on /matches/:id and /matches/:id/squad)
+// and the serialized result is cached briefly in memory so concurrent visitors
+// don't each hit MongoDB.
+const LIST_CACHE_MS = 5000;
+let listCache = { body: null, time: 0 };
+let listInFlight = null;
+
+const loadMatchList = async () => {
+    const matches = await Match.find({}, '-squadA -squadB -__v').lean();
+    return JSON.stringify(matches);
+};
+
 router.get('/matches', async (req, res) => {
     try {
-        const matches = await Match.find().sort({ createdAt: -1 });
-        res.json(matches);
+        if (!listCache.body || Date.now() - listCache.time > LIST_CACHE_MS) {
+            if (!listInFlight) {
+                listInFlight = loadMatchList()
+                    .then((body) => { listCache = { body, time: Date.now() }; return body; })
+                    .finally(() => { listInFlight = null; });
+            }
+            await listInFlight;
+        }
+        res.set('Cache-Control', 'public, max-age=5, stale-while-revalidate=30');
+        res.type('application/json').send(listCache.body);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -49,10 +69,31 @@ router.get('/matches/:id/scorecard', async (req, res) => {
         const effectiveId = match.matchId || matchId;
         const scorecardData = await cricketService.fetchMatchScorecard(effectiveId);
 
+        // Cricbuzz's own match header is the source of truth for the match state.
+        // If our stored record is behind (e.g. still "live" after the result), fix it now.
+        let matchUpdate = null;
+        if (scorecardData?.header) {
+            const update = await cricketService.fetchMatchState(effectiveId, match);
+            if (update) {
+                const differs = Object.keys(update).some((k) => String(match[k] ?? '') !== String(update[k] ?? ''));
+                if (differs) {
+                    const saved = await Match.findOneAndUpdate(
+                        { matchId: effectiveId },
+                        { $set: { ...update, lastCheckedAt: new Date() } },
+                        { returnDocument: 'after', projection: '-squadA -squadB -__v' }
+                    ).lean();
+                    const io = req.app.get('io');
+                    if (io && saved) {
+                        io.to('live_matches').emit('match_update', saved);
+                        io.to(`match_${effectiveId}`).emit('match_update', saved);
+                    }
+                }
+                matchUpdate = update;
+            }
+        }
+
         if (scorecardData && scorecardData.available) {
-            scorecardData.teamA = match.teamA;
-            scorecardData.teamB = match.teamB;
-            return res.json(scorecardData);
+            return res.json({ ...scorecardData, teamA: match.teamA, teamB: match.teamB, matchUpdate });
         }
 
         // Return clean not available response without any synthetic fake data
@@ -62,7 +103,9 @@ router.get('/matches/:id/scorecard', async (req, res) => {
             teamB: match.teamB,
             innings: [],
             available: false,
-            message: match.matchStarted ? 'Scorecard is being updated...' : 'Scorecard data will appear once the match commences'
+            matchUpdate,
+            miniscore: scorecardData?.miniscore || null,
+            message: (matchUpdate?.matchStarted ?? match.matchStarted) ? 'Scorecard is being updated...' : 'Scorecard data will appear once the match commences'
         };
         return res.json(notAvailable);
     } catch (err) {
@@ -103,7 +146,7 @@ router.get('/matches/:id/squad', async (req, res) => {
 });
 
 // Debug: emit match update manually
-router.post('/debug/emit-match-update/:id', async (req, res) => {
+router.post('/debug/emit-match-update/:id', requireAdmin, async (req, res) => {
     try {
         const queryId = req.params.id;
         const match = await Match.findOne({
@@ -127,7 +170,7 @@ router.post('/debug/emit-match-update/:id', async (req, res) => {
 });
 
 // Debug: trigger automation manually
-router.post('/debug/trigger-automation', async (req, res) => {
+router.post('/debug/trigger-automation', requireAdmin, async (req, res) => {
     try {
         const automation = require('../automation');
         res.json({ message: 'Automation triggered (will run in next cron cycle)' });
@@ -137,7 +180,7 @@ router.post('/debug/trigger-automation', async (req, res) => {
 });
 
 // Update live match details
-router.patch('/matches/:id/live', async (req, res) => {
+router.patch('/matches/:id/live', requireAdmin, async (req, res) => {
     try {
         const queryId = req.params.id;
         const allowedFields = [
@@ -177,7 +220,7 @@ router.patch('/matches/:id/live', async (req, res) => {
 });
 
 // Create a new match
-router.post('/matches', async (req, res) => {
+router.post('/matches', requireAdmin, async (req, res) => {
     try {
         const newMatch = new Match(req.body);
         const savedMatch = await newMatch.save();

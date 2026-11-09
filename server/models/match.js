@@ -13,7 +13,9 @@ const matchSchema = new mongoose.Schema({
   matchEnded: { type: Boolean, default: false },
   venue: String,
   date: String,
+  startTime: Number, // scheduled start, epoch milliseconds (from Cricbuzz)
   matchType: String,
+  lastCheckedAt: Date, // last time the match page itself was checked for its real state
   // This stores the players for the Fantasy Team Builder
   squadA: { type: Array, default: [] }, 
   squadB: { type: Array, default: [] },

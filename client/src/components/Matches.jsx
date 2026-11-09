@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
 import { Link } from 'react-router-dom';
-import socket from '../socket';
-import { API_BASE_URL } from '../config';
+import { useMatches, refreshMatches } from '../store/matchesStore';
+import {
+  isWomenMatch, getFormat, isLive, isUpcoming, isCompleted, splitByPriority,
+} from '../utils/matchCategories';
 import Icon from './common/Icons';
-import OverStrip from './common/OverStrip';
 import ScoreDisplay from './common/ScoreDisplay';
 import { CardSkeleton, HeroSkeleton } from './common/Skeletons';
 import { formatToIST } from '../utils/formatTime';
@@ -23,6 +23,25 @@ const getFlagUrl = (teamName) => {
   const name = teamName.toLowerCase().replace(/ women| u19| a$/g, '').trim();
   const code = FLAG_MAP[name];
   return code ? `https://flagcdn.com/32x24/${code}.png` : null;
+};
+
+const EMPTY_SCORE = '0/0 (0)';
+const inningsCount = (s) => (!s || s === EMPTY_SCORE ? 0 : String(s).split('&').length);
+
+// What to show for a side: nothing before the match starts, "Yet to bat" until they bat.
+const scoreText = (m, score) => {
+  if (!m.matchStarted) return '';
+  if (!score || score === EMPTY_SCORE) return m.matchEnded ? '—' : 'Yet to bat';
+  return score;
+};
+
+// The side batting now is the one with the most recent innings.
+const battingSide = (m) => {
+  if (!m.matchStarted || m.matchEnded) return null;
+  const a = inningsCount(m.scoreA);
+  const b = inningsCount(m.scoreB);
+  if (a === 0 && b === 0) return null;
+  return b >= a && b > 0 ? 'B' : 'A';
 };
 
 const MatchCard = React.memo(({ match }) => {
@@ -62,13 +81,13 @@ const MatchCard = React.memo(({ match }) => {
       <Link to={`/match-center/${id}`} className="card-teams-link">
         <div className="card-teams-block">
           {[
-            { name: match.teamA, score: match.scoreA, flag: flagA, isBatting: isLive && !match.scoreB },
-            { name: match.teamB, score: match.scoreB, flag: flagB, isBatting: isLive && !!match.scoreB },
+            { name: match.teamA, score: scoreText(match, match.scoreA), flag: flagA, isBatting: battingSide(match) === 'A' },
+            { name: match.teamB, score: scoreText(match, match.scoreB), flag: flagB, isBatting: battingSide(match) === 'B' },
           ].map(({ name, score, flag, isBatting }) => (
             <div key={name} className="card-team-row">
               <div className="team-info-side">
                 {flag ? (
-                  <img src={flag} alt={name} className="team-flag-img" />
+                  <img src={flag} alt={name} className="team-flag-img" width="32" height="24" loading="lazy" decoding="async" />
                 ) : (
                   <div className="team-flag-mono">{name?.slice(0, 2).toUpperCase()}</div>
                 )}
@@ -81,13 +100,6 @@ const MatchCard = React.memo(({ match }) => {
           ))}
         </div>
       </Link>
-
-      {/* Over strip for live match */}
-      {isLive && (
-        <div className="card-over-strip-wrap">
-          <OverStrip balls={['1', '•', '4', 'W', '6', '1']} label="Last Over" />
-        </div>
-      )}
 
       {/* Status line */}
       {displayStatus && (
@@ -118,57 +130,148 @@ const MatchCard = React.memo(({ match }) => {
   );
 });
 
-export const Matches = ({ user }) => {
-  const [matches, setMatches] = useState([]);
-  const [filter, setFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
+// Remember the viewer's Men/Women and format choice between visits.
+const readPref = (key, fallback) => {
+  try { return localStorage.getItem(`striker:pref:${key}`) || fallback; } catch { return fallback; }
+};
+const writePref = (key, value) => {
+  try { localStorage.setItem(`striker:pref:${key}`, value); } catch { /* ignore */ }
+};
 
-  const handleMatchUpdate = (updatedMatch) => {
-    setMatches((prevMatches) => {
-      const updatedId = updatedMatch.matchId || updatedMatch._id;
-      const found = prevMatches.some((m) => (m.matchId || m._id) === updatedId);
-      if (!found) return [updatedMatch, ...prevMatches];
-      return prevMatches.map((m) =>
-        (m.matchId || m._id) === updatedId ? { ...m, ...updatedMatch } : m
-      );
-    });
-  };
-
+// True when the first load is taking long (the free server is waking up).
+const useSlowStart = (loaded) => {
+  const [slow, setSlow] = useState(false);
   useEffect(() => {
-    const fetchMatches = async () => {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/api/matches`);
-        setMatches(response.data || []);
-      } catch (err) {
-        console.error('Error fetching matches:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMatches();
-    socket.emit('join_live_matches');
-    socket.on('match_update', handleMatchUpdate);
-    return () => { socket.off('match_update', handleMatchUpdate); };
-  }, []);
+    if (loaded) { setSlow(false); return undefined; }
+    const t = setTimeout(() => setSlow(true), 2500);
+    return () => clearTimeout(t);
+  }, [loaded]);
+  return slow;
+};
 
-  const liveMatches = useMemo(() => matches.filter((m) => m.matchStarted && !m.matchEnded), [matches]);
-  const upcomingMatches = useMemo(() => matches.filter((m) => !m.matchStarted && !m.matchEnded), [matches]);
-  const completedMatches = useMemo(() => matches.filter((m) => m.matchEnded), [matches]);
-  const featuredMatch = liveMatches[0] || matches[0];
+const PAGE_SIZE = 12;
 
-  const filteredMatches = useMemo(() => {
-    if (filter === 'live') return liveMatches;
-    if (filter === 'upcoming') return upcomingMatches;
-    if (filter === 'completed') return completedMatches;
-    return matches;
-  }, [filter, matches, liveMatches, upcomingMatches, completedMatches]);
+// One horizontal row of cards, rendered a page at a time.
+const MatchRow = ({ matches }) => {
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const shown = matches.slice(0, limit);
+  const remaining = matches.length - shown.length;
+  return (
+    <div className="matches-grid">
+      {shown.map((m) => <MatchCard key={m.matchId || m._id} match={m} />)}
+      {remaining > 0 && (
+        <button type="button" className="show-more-tile" onClick={() => setLimit((l) => l + PAGE_SIZE)}>
+          <Icon name="plus" size={18} />
+          <span>Show {Math.min(remaining, PAGE_SIZE)} more</span>
+          <small>{remaining} remaining</small>
+        </button>
+      )}
+    </div>
+  );
+};
+
+const MatchSection = ({ title, icon, live, groups }) => {
+  const total = groups.top.length + groups.other.length;
+  return (
+    <div>
+      <div className={`section-band ${live ? 'live' : ''}`}>
+        {live && <span className="section-band-dot live" />}
+        <Icon name={icon} size={15} color={live ? 'var(--color-live)' : 'var(--text-secondary)'} />
+        <span>{title} ({total})</span>
+      </div>
+      {total === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <Icon name="cricket" size={36} color="var(--text-muted)" />
+          </div>
+          <div className="empty-state-title">No matches here</div>
+          <div className="empty-state-desc">Try another format or check back soon.</div>
+        </div>
+      ) : (
+        <>
+          {groups.top.length > 0 && (
+            <>
+              {groups.other.length > 0 && <div className="tier-label">Top teams</div>}
+              <MatchRow matches={groups.top} />
+            </>
+          )}
+          {groups.other.length > 0 && (
+            <>
+              {groups.top.length > 0 && <div className="tier-label">Other matches</div>}
+              <MatchRow matches={groups.other} />
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+const FORMATS = [
+  { id: 'all', label: 'All' },
+  { id: 'T20', label: 'T20' },
+  { id: 'ODI', label: 'ODI' },
+  { id: 'TEST', label: 'Test' },
+];
+
+export const Matches = ({ user }) => {
+  const { matches: allMatches, loaded, error } = useMatches();
+  const [filter, setFilter] = useState('all');
+  const [gender, setGender] = useState(() => readPref('gender', 'men'));
+  const [format, setFormat] = useState(() => readPref('format', 'all'));
+  const slowStart = useSlowStart(loaded);
+
+  useEffect(() => { writePref('gender', gender); }, [gender]);
+  useEffect(() => { writePref('format', format); }, [format]);
+
+  const loading = !loaded && allMatches.length === 0;
+
+  // Men's / Women's first, then format.
+  const genderMatches = useMemo(
+    () => allMatches.filter((m) => isWomenMatch(m) === (gender === 'women')),
+    [allMatches, gender]
+  );
+  const matches = useMemo(
+    () => (format === 'all' ? genderMatches : genderMatches.filter((m) => getFormat(m) === format)),
+    [genderMatches, format]
+  );
+
+  const liveMatches = useMemo(() => splitByPriority(matches.filter(isLive), 'desc'), [matches]);
+  const upcomingMatches = useMemo(() => splitByPriority(matches.filter(isUpcoming), 'asc'), [matches]);
+  const completedMatches = useMemo(() => splitByPriority(matches.filter(isCompleted), 'desc'), [matches]);
+
+  const countOf = (g) => g.top.length + g.other.length;
+  const liveCount = countOf(liveMatches);
+  const upcomingCount = countOf(upcomingMatches);
+  const completedCount = countOf(completedMatches);
+
+  // Hero: biggest live match, else biggest upcoming one, else latest result.
+  const featuredMatch =
+    liveMatches.top[0] || upcomingMatches.top[0] || liveMatches.other[0] ||
+    completedMatches.top[0] || upcomingMatches.other[0] || completedMatches.other[0];
+
+  const formatCounts = useMemo(() => {
+    const c = { all: genderMatches.length, T20: 0, ODI: 0, TEST: 0 };
+    genderMatches.forEach((m) => { const f = getFormat(m); if (f in c) c[f] += 1; });
+    return c;
+  }, [genderMatches]);
 
   const FILTERS = [
     { id: 'all', label: 'All Matches', count: matches.length, icon: 'cricket' },
-    { id: 'live', label: 'Live Now', count: liveMatches.length, isLive: true, icon: 'zap' },
-    { id: 'upcoming', label: 'Upcoming', count: upcomingMatches.length, icon: 'calendar' },
-    { id: 'completed', label: 'Completed', count: completedMatches.length, icon: 'trophy' },
+    { id: 'live', label: 'Live Now', count: liveCount, isLive: true, icon: 'zap' },
+    { id: 'upcoming', label: 'Upcoming', count: upcomingCount, icon: 'calendar' },
+    { id: 'completed', label: 'Completed', count: completedCount, icon: 'trophy' },
   ];
+
+  const SECTIONS = [
+    { id: 'live', title: 'Live Matches', icon: 'zap', live: true, groups: liveMatches },
+    { id: 'upcoming', title: 'Upcoming Matches', icon: 'calendar', groups: upcomingMatches },
+    { id: 'completed', title: 'Recent Results', icon: 'trophy', groups: completedMatches },
+  ];
+  const visibleSections = SECTIONS.filter(
+    (s) => (filter === 'all' || filter === s.id) && (filter !== 'all' || countOf(s.groups) > 0)
+  );
+  const resetKey = `${gender}-${format}-${filter}`;
 
   return (
     <div className="matches-page animate-fade-up">
@@ -204,8 +307,8 @@ export const Matches = ({ user }) => {
           <div className="hero-teams-grid">
             <div className="hero-team-side">
               <div className="hero-team-name">{featuredMatch.teamA}</div>
-              <div className={`hero-team-score ${featuredMatch.matchStarted && !featuredMatch.matchEnded && !featuredMatch.scoreB ? 'live-batting' : ''}`}>
-                <ScoreDisplay score={featuredMatch.scoreA} size="hero" />
+              <div className={`hero-team-score ${battingSide(featuredMatch) === 'A' ? 'live-batting' : ''}`}>
+                <ScoreDisplay score={scoreText(featuredMatch, featuredMatch.scoreA)} size="hero" highlight={battingSide(featuredMatch) === 'A'} />
               </div>
             </div>
 
@@ -213,8 +316,8 @@ export const Matches = ({ user }) => {
 
             <div className="hero-team-side is-right">
               <div className="hero-team-name">{featuredMatch.teamB}</div>
-              <div className={`hero-team-score ${featuredMatch.matchStarted && !featuredMatch.matchEnded && !!featuredMatch.scoreB ? 'live-batting' : ''}`}>
-                <ScoreDisplay score={featuredMatch.scoreB} size="hero" highlight={featuredMatch.matchStarted && !featuredMatch.matchEnded} />
+              <div className={`hero-team-score ${battingSide(featuredMatch) === 'B' ? 'live-batting' : ''}`}>
+                <ScoreDisplay score={scoreText(featuredMatch, featuredMatch.scoreB)} size="hero" highlight={battingSide(featuredMatch) === 'B'} />
               </div>
             </div>
           </div>
@@ -222,7 +325,7 @@ export const Matches = ({ user }) => {
           <div className="hero-footer">
             <div className="hero-status-text">
               <Icon name="bolt" size={14} color="#60a5fa" />
-              <span>{featuredMatch.status || (featuredMatch.matchStarted ? 'Live Match in Progress' : 'Upcoming Fixture')}</span>
+              <span>{formatToIST(featuredMatch.status) || (featuredMatch.matchStarted ? 'Live Match in Progress' : 'Upcoming Fixture')}</span>
             </div>
             <Link
               to={`/match-center/${featuredMatch.matchId || featuredMatch._id}`}
@@ -288,68 +391,74 @@ export const Matches = ({ user }) => {
         ))}
       </div>
 
+      {/* Men's / Women's + format */}
+      <div className="match-filters-row">
+        <div className="gender-toggle" role="tablist" aria-label="Men's or women's cricket">
+          {[{ id: 'men', label: "Men's" }, { id: 'women', label: "Women's" }].map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={gender === id}
+              className={`gender-btn ${gender === id ? 'active' : ''}`}
+              onClick={() => setGender(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="format-chips" role="tablist" aria-label="Match format">
+          {FORMATS.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={format === id}
+              className={`format-chip ${format === id ? 'active' : ''}`}
+              onClick={() => setFormat(id)}
+            >
+              <span>{label}</span>
+              <span className="format-chip-count">{formatCounts[id]}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Matches Grid */}
       {loading ? (
-        <div className="matches-grid">
-          {[1, 2, 3, 4].map((i) => <CardSkeleton key={i} />)}
+        <>
+          {slowStart && (
+            <div className="wake-note">
+              <span className="spinner" />
+              <span>Connecting to the live score server… the first load can take a few seconds.</span>
+            </div>
+          )}
+          <div className="matches-grid">
+            {[1, 2, 3, 4].map((i) => <CardSkeleton key={i} />)}
+          </div>
+        </>
+      ) : allMatches.length === 0 && error ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <Icon name="cricket" size={40} color="var(--color-primary)" />
+          </div>
+          <div className="empty-state-title">Couldn't load matches</div>
+          <div className="empty-state-desc">
+            <button type="button" className="top-back-btn" onClick={refreshMatches}>Try again</button>
+          </div>
         </div>
-      ) : filter === 'all' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-          {liveMatches.length > 0 && (
-            <div>
-              <div className="section-band live">
-                <span className="section-band-dot live" />
-                <Icon name="zap" size={15} color="var(--color-live)" />
-                <span>Live Matches ({liveMatches.length})</span>
-              </div>
-              <div className="matches-grid">
-                {liveMatches.map((m) => <MatchCard key={m.matchId || m._id} match={m} />)}
-              </div>
-            </div>
-          )}
-          {upcomingMatches.length > 0 && (
-            <div>
-              <div className="section-band">
-                <Icon name="calendar" size={15} color="var(--text-secondary)" />
-                <span>Upcoming Matches ({upcomingMatches.length})</span>
-              </div>
-              <div className="matches-grid">
-                {upcomingMatches.map((m) => <MatchCard key={m.matchId || m._id} match={m} />)}
-              </div>
-            </div>
-          )}
-          {completedMatches.length > 0 && (
-            <div>
-              <div className="section-band">
-                <Icon name="trophy" size={15} color="var(--text-muted)" />
-                <span>Recent Results ({completedMatches.length})</span>
-              </div>
-              <div className="matches-grid">
-                {completedMatches.map((m) => <MatchCard key={m.matchId || m._id} match={m} />)}
-              </div>
-            </div>
-          )}
-          {matches.length === 0 && (
+      ) : (
+        <div key={resetKey} style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {visibleSections.map((s) => (
+            <MatchSection key={s.id} title={s.title} icon={s.icon} live={s.live} groups={s.groups} />
+          ))}
+          {filter === 'all' && matches.length === 0 && (
             <div className="empty-state">
               <div className="empty-state-icon">
                 <Icon name="cricket" size={40} color="var(--color-primary)" />
               </div>
               <div className="empty-state-title">No Matches Available</div>
-              <div className="empty-state-desc">Check back soon for upcoming tournaments and live fixtures.</div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="matches-grid">
-          {filteredMatches.length > 0 ? (
-            filteredMatches.map((m) => <MatchCard key={m.matchId || m._id} match={m} />)
-          ) : (
-            <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
-              <div className="empty-state-icon">
-                <Icon name="cricket" size={36} color="var(--text-muted)" />
-              </div>
-              <div className="empty-state-title">No {filter} matches</div>
-              <div className="empty-state-desc">Check back soon for updates.</div>
+              <div className="empty-state-desc">Try another format, or check back soon for new fixtures.</div>
             </div>
           )}
         </div>

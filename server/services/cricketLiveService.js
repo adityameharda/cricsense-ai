@@ -72,6 +72,26 @@ function convertGmtToIst(text) {
   return formatted;
 }
 
+/**
+ * Maps a Cricbuzz match state + status text to our started/ended flags.
+ * Cricbuzz states seen in practice: Preview, Upcoming, Toss, In Progress, Innings Break,
+ * Stumps, Lunch, Tea, Dinner, Drinks, Rain, Delay, Wet Outfield, Complete, Abandon.
+ * Anything other than Preview/Upcoming means the match day has begun.
+ */
+const NOT_STARTED_STATES = new Set(['', 'preview', 'upcoming']);
+const ENDED_STATES = new Set(['complete', 'abandon', 'abandoned', 'cancelled', 'no result']);
+const ENDED_STATUS_RE = /\bwon by\b|\bwon\b.*\b(super over|bowl.?out)\b|\bmatch drawn\b|\bdrawn\b|\bno result\b|\babandoned\b|\bmatch tied\b|\bcancelled\b/i;
+
+function deriveMatchFlags(state, status) {
+  const s = String(state || '').trim().toLowerCase();
+  const matchEnded = ENDED_STATES.has(s) || ENDED_STATUS_RE.test(String(status || ''));
+  const matchStarted = matchEnded || !NOT_STARTED_STATES.has(s);
+  return { matchStarted, matchEnded };
+}
+
+const formatInnings = (runs = 0, wickets = 0, overs = 0) =>
+  `${runs || 0}/${wickets || 0} (${cleanCricketOvers(overs || 0)})`;
+
 // Helper to extract JSON from Next.js SSR streaming payloads
 function extractNextData(rawHtml) {
   const nextPushes = [...rawHtml.matchAll(/self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)/g)];
@@ -253,23 +273,22 @@ async function fetchAllRealMatches() {
             const rawStatus = info.status || '';
             const status = convertGmtToIst(rawStatus);
 
-            const matchStarted = state === 'In Progress' || state === 'Complete' || state === 'Innings Break' || state === 'Delay';
-            const matchEnded = state === 'Complete' || rawStatus.toLowerCase().includes('won by') || rawStatus.toLowerCase().includes('match drawn') || rawStatus.toLowerCase().includes('no result') || rawStatus.toLowerCase().includes('abandoned');
+            const { matchStarted, matchEnded } = deriveMatchFlags(state, rawStatus);
 
             let scoreA = '0/0 (0)';
             let scoreB = '0/0 (0)';
 
             if (score?.team1Score) {
               const inngs = [];
-              if (score.team1Score.inngs1) inngs.push(`${score.team1Score.inngs1.runs || 0}/${score.team1Score.inngs1.wickets || 0} (${cleanCricketOvers(score.team1Score.inngs1.overs || 0)})`);
-              if (score.team1Score.inngs2) inngs.push(`${score.team1Score.inngs2.runs || 0}/${score.team1Score.inngs2.wickets || 0} (${cleanCricketOvers(score.team1Score.inngs2.overs || 0)})`);
+              if (score.team1Score.inngs1) inngs.push(formatInnings(score.team1Score.inngs1.runs, score.team1Score.inngs1.wickets, score.team1Score.inngs1.overs));
+              if (score.team1Score.inngs2) inngs.push(formatInnings(score.team1Score.inngs2.runs, score.team1Score.inngs2.wickets, score.team1Score.inngs2.overs));
               if (inngs.length > 0) scoreA = inngs.join(' & ');
             }
 
             if (score?.team2Score) {
               const inngs = [];
-              if (score.team2Score.inngs1) inngs.push(`${score.team2Score.inngs1.runs || 0}/${score.team2Score.inngs1.wickets || 0} (${cleanCricketOvers(score.team2Score.inngs1.overs || 0)})`);
-              if (score.team2Score.inngs2) inngs.push(`${score.team2Score.inngs2.runs || 0}/${score.team2Score.inngs2.wickets || 0} (${cleanCricketOvers(score.team2Score.inngs2.overs || 0)})`);
+              if (score.team2Score.inngs1) inngs.push(formatInnings(score.team2Score.inngs1.runs, score.team2Score.inngs1.wickets, score.team2Score.inngs1.overs));
+              if (score.team2Score.inngs2) inngs.push(formatInnings(score.team2Score.inngs2.runs, score.team2Score.inngs2.wickets, score.team2Score.inngs2.overs));
               if (inngs.length > 0) scoreB = inngs.join(' & ');
             }
 
@@ -278,9 +297,11 @@ async function fetchAllRealMatches() {
             const venue = ground && city ? `${ground}, ${city}` : (ground || city || 'TBA');
 
             let dateStr = 'TBA';
+            let startTime = null;
             if (info.startDate) {
               const d = new Date(parseInt(info.startDate, 10));
               if (!isNaN(d.getTime())) {
+                startTime = d.getTime();
                 dateStr = d.toISOString().split('T')[0];
               }
             }
@@ -300,6 +321,7 @@ async function fetchAllRealMatches() {
               matchEnded,
               venue,
               date: dateStr,
+              startTime,
               matchType: info.matchFormat || cat.matchType || 'Cricket'
             });
           });
@@ -340,8 +362,20 @@ async function fetchMatchScorecard(matchId) {
     const matchHeader = extractBalancedJson(combinedNext, '"matchHeader":{');
     let miniscore = extractBalancedJson(combinedNext, '"miniscore":{');
 
+    // Real match state straight from Cricbuzz's match header
+    const header = matchHeader ? {
+      state: matchHeader.state || '',
+      complete: !!matchHeader.complete,
+      status: convertGmtToIst(matchHeader.status || ''),
+      startTime: Number(matchHeader.matchStartTimestamp) || null,
+      format: matchHeader.matchFormat || '',
+      team1: { name: matchHeader.team1?.name || '', shortName: matchHeader.team1?.shortName || '' },
+      team2: { name: matchHeader.team2?.name || '', shortName: matchHeader.team2?.shortName || '' },
+    } : null;
+
     // If miniscore is empty, fetch live telemetry from live scores page
-    if (!miniscore || !miniscore.batsmanStriker) {
+    // (not needed once the match is complete)
+    if ((!miniscore || !miniscore.batsmanStriker) && !header?.complete) {
       const liveData = await fetchLiveTelemetry(matchId);
       if (liveData) {
         miniscore = liveData;
@@ -357,6 +391,7 @@ async function fetchMatchScorecard(matchId) {
         innings: [],
         available: false,
         status: status || 'Scorecard not yet available',
+        header,
         miniscore: miniscore || null
       };
       scorecardCache.set(matchId, { data: emptyResult, time: now });
@@ -386,6 +421,7 @@ async function fetchMatchScorecard(matchId) {
         // If player has balls faced or has a dismissal, they batted
         if (balls > 0 || (outDesc && outDesc.toLowerCase() !== 'not out' && outDesc !== '')) {
           batting.push({
+            id: String(b.batId || ''),
             batsman: batName,
             dismissal: outDesc || 'not out',
             'dismissal-info': outDesc || 'not out',
@@ -397,6 +433,7 @@ async function fetchMatchScorecard(matchId) {
           });
         } else if (outDesc.toLowerCase() === 'not out' && (runs > 0 || balls > 0)) {
           batting.push({
+            id: String(b.batId || ''),
             batsman: batName,
             dismissal: 'not out',
             'dismissal-info': 'not out',
@@ -424,6 +461,7 @@ async function fetchMatchScorecard(matchId) {
         const eco = bw.economy !== undefined ? String(bw.economy) : (overs > 0 ? (runs / parseFloat(overs)).toFixed(2) : '0.00');
 
         bowling.push({
+          id: String(bw.bowlerId || bw.bowlId || ''),
           bowler: bowlerName,
           o: overs,
           m: maidens,
@@ -507,6 +545,7 @@ async function fetchMatchScorecard(matchId) {
       innings,
       available: innings.length > 0,
       status,
+      header,
       miniscore: formattedMiniscore
     };
 
@@ -522,6 +561,114 @@ async function fetchMatchScorecard(matchId) {
     };
     return fallback;
   }
+}
+
+const sameTeam = (a = '', b = '') => {
+  const x = a.trim().toLowerCase();
+  const y = b.trim().toLowerCase();
+  return !!x && !!y && x === y;
+};
+
+/**
+ * Current real state of a single match, read from its Cricbuzz match page.
+ * Used for matches that are no longer listed on the live-scores page, so a match
+ * that has finished never stays "live" in our database.
+ * Returns null when Cricbuzz could not be reached or had no header for the match.
+ */
+async function fetchMatchState(matchId, matchRecord = {}) {
+  const sc = await fetchMatchScorecard(String(matchId));
+  const header = sc?.header;
+  if (!header) return null;
+
+  const { matchStarted, matchEnded } = deriveMatchFlags(header.state, header.status);
+  const update = {
+    status: header.status || matchRecord.status || '',
+    matchStarted,
+    matchEnded: matchEnded || header.complete,
+  };
+  if (header.startTime) {
+    update.startTime = header.startTime;
+    update.date = new Date(header.startTime).toISOString().split('T')[0];
+  }
+
+  // Rebuild each side's score from the innings, matched by team name
+  if (Array.isArray(sc.innings) && sc.innings.length > 0) {
+    const names = {
+      A: [matchRecord.teamA, header.team1.name, header.team1.shortName],
+      B: [matchRecord.teamB, header.team2.name, header.team2.shortName],
+    };
+    // Header order may differ from ours: line it up by name first
+    if (sameTeam(matchRecord.teamA, header.team2.name) || sameTeam(matchRecord.teamB, header.team1.name)) {
+      names.A = [matchRecord.teamA, header.team2.name, header.team2.shortName];
+      names.B = [matchRecord.teamB, header.team1.name, header.team1.shortName];
+    }
+    const inningsFor = (list) => sc.innings
+      .filter((inn) => list.some((n) => sameTeam(n, inn.teamName)))
+      .map((inn) => formatInnings(inn.runs, inn.wickets, inn.overs));
+    const a = inningsFor(names.A);
+    const b = inningsFor(names.B);
+    if (a.length) update.scoreA = a.join(' & ');
+    if (b.length) update.scoreB = b.join(' & ');
+  }
+  return update;
+}
+
+// True when a short code's letters appear in order in the team name
+// ("ODSA" → "Odisha", "WI" → "West Indies", "NZ" → "New Zealand").
+function shortCodeFits(code = '', name = '') {
+  const c = code.toLowerCase().replace(/[^a-z]/g, '');
+  const n = name.toLowerCase().replace(/[^a-z]/g, '');
+  if (!c || !n || n[0] !== c[0]) return false;
+  let i = 0;
+  for (const ch of n) if (ch === c[i]) i += 1;
+  return i === c.length;
+}
+
+// Cricbuzz roles → fantasy role buckets
+function normaliseRole(role = '', keeper = false) {
+  const r = role.toLowerCase();
+  if (keeper || r.includes('wk')) return 'wk';
+  if (r.includes('allrounder') || r.includes('all-rounder')) return 'ar';
+  if (r.includes('bowler')) return 'bowl';
+  return 'bat';
+}
+
+/**
+ * Squads from the structured data embedded in Cricbuzz's squads page.
+ * Each team has its own "players" block, grouped as "playing XI"/"bench" once the
+ * toss is done, or "Squad" before it. Support staff are skipped.
+ */
+function extractSquadBlocks(combined) {
+  const blocks = [];
+  let idx = 0;
+  while ((idx = combined.indexOf('"players":{', idx)) !== -1) {
+    const groups = extractBalancedJson(combined.slice(idx), '"players":{');
+    idx += 11;
+    if (!groups || typeof groups !== 'object') continue;
+    const players = [];
+    let teamShort = '';
+    Object.entries(groups).forEach(([groupName, list]) => {
+      const g = groupName.toLowerCase();
+      if (g.includes('staff') || !Array.isArray(list)) return;
+      list.forEach((p) => {
+        if (!p || !p.name) return;
+        teamShort = teamShort || p.teamName || '';
+        const imageId = p.imageDetails?.imageId || p.faceImageId;
+        players.push({
+          id: String(p.id || ''),
+          name: p.name,
+          role: p.role || '',
+          fantasyRole: normaliseRole(p.role, p.keeper),
+          isCaptain: !!p.captain,
+          isKeeper: !!p.keeper,
+          playingXI: g.includes('playing') ? true : g.includes('bench') ? false : null,
+          image: imageId ? `https://static.cricbuzz.com/a/img/v1/50x50/i1/c${imageId}/i.jpg` : '',
+        });
+      });
+    });
+    if (players.length) blocks.push({ teamShort, players });
+  }
+  return blocks;
 }
 
 /**
@@ -547,54 +694,31 @@ async function fetchMatchSquads(matchId, matchRecord) {
       timeout: 7000
     });
 
-    const html = res.data;
-    const teamAName = matchRecord?.teamA || '';
-    const teamBName = matchRecord?.teamB || '';
+    const combined = extractNextData(res.data);
+    const blocks = extractSquadBlocks(combined);
 
-    // Helper to extract player objects from a section of HTML
-    const extractPlayersFromHtml = (htmlChunk) => {
-      const list = [];
-      const linkRegex = /<a[^>]*href="\/profiles\/(\d+)\/([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
-      let m;
-      while ((m = linkRegex.exec(htmlChunk)) !== null) {
-        const id = m[1];
-        const inner = m[3];
-        const imgMatch = inner.match(/src="([^"]+)"/);
-        const nameMatch = inner.match(/<span>([^<]+)<\/span>/);
-        const badgeMatch = inner.match(/<span[^>]*>\s*(\([CWK\s]+\))\s*<\/span>/);
-        const roleMatch = inner.match(/<div class="text-cbTxtSec text-xs">([^<]+)<\/div>/);
-
-        const name = nameMatch ? nameMatch[1].trim() : '';
-        const badge = badgeMatch ? badgeMatch[1].trim().toUpperCase() : '';
-        const role = roleMatch ? roleMatch[1].trim() : '';
-        let image = imgMatch ? imgMatch[1].replace(/&amp;/g, '&') : '';
-
-        if (name && !name.toLowerCase().includes('playing xi') && !name.toLowerCase().includes('bench')) {
-          const isCaptain = badge.includes('(C)') || badge.includes('C');
-          const isKeeper = badge.includes('(WK)') || badge.includes('WK') || role.toLowerCase().includes('wk');
-          list.push({
-            id,
-            name,
-            image,
-            role,
-            isCaptain,
-            isKeeper,
-            badge
-          });
+    if (blocks.length >= 2) {
+      // Each block only carries a short code (e.g. "GUJ"); line blocks up with our
+      // teamA/teamB so players never end up under the wrong team.
+      let [first, second] = blocks;
+      const teamA = matchRecord?.teamA || '';
+      const teamB = matchRecord?.teamB || '';
+      let firstIs = null;
+      if (shortCodeFits(first.teamShort, teamA) !== shortCodeFits(first.teamShort, teamB)) {
+        firstIs = shortCodeFits(first.teamShort, teamA) ? 'A' : 'B';
+      } else if (shortCodeFits(second.teamShort, teamA) !== shortCodeFits(second.teamShort, teamB)) {
+        firstIs = shortCodeFits(second.teamShort, teamA) ? 'B' : 'A';
+      } else {
+        // Ambiguous codes: ask the scorecard page header, which has full names + codes
+        const header = (await fetchMatchScorecard(String(matchId)))?.header;
+        if (header) {
+          const t = [header.team1, header.team2].find((x) => sameTeam(x.shortName, first.teamShort));
+          if (t) firstIs = sameTeam(t.name, teamB) ? 'B' : 'A';
         }
       }
-      return list;
-    };
-
-    // Find headings or boundaries for Team 1 and Team 2 in squads page
-    // Cricbuzz squads pages render Team 1 followed by Team 2
-    const allSquadPlayers = extractPlayersFromHtml(html);
-    if (allSquadPlayers.length >= 11) {
-      // Split between team 1 and team 2
-      // Check if team 1 is teamA or teamB
-      const half = Math.ceil(allSquadPlayers.length / 2);
-      squadA = allSquadPlayers.slice(0, half);
-      squadB = allSquadPlayers.slice(half);
+      if (firstIs === 'B') [first, second] = [second, first];
+      squadA = first.players;
+      squadB = second.players;
     }
   } catch (err) {
     // continue to fallback
@@ -644,6 +768,11 @@ module.exports = {
   convertGmtToIst,
   fetchAllRealMatches,
   fetchMatchScorecard,
+  fetchMatchState,
   fetchLiveTelemetry,
-  fetchMatchSquads
+  fetchMatchSquads,
+  deriveMatchFlags,
+  extractNextData,
+  extractBalancedJson,
+  USER_AGENT
 };

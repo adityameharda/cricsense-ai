@@ -1,6 +1,8 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
+const FantasyTeam = require('../models/fantasyTeam');
+const Match = require('../models/match');
 const router = express.Router();
 
 // Generate JWT token
@@ -31,62 +33,6 @@ const requireAuth = async (req, res, next) => {
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired session. Please log in.' });
-  }
-};
-
-// Lenient middleware for read-only or demo fallbacks
-const authenticateToken = async (req, res, next) => {
-  try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      let guestUser = await User.findOne({ username: 'deepak_verma' });
-      if (!guestUser) {
-        guestUser = new User({
-          username: 'deepak_verma',
-          email: 'deepak_verma@cricscore.pro',
-          password: 'password123',
-          virtualCoins: 1000,
-        });
-        await guestUser.save();
-      }
-      req.user = guestUser;
-      return next();
-    }
-
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-      const uId = decoded.userId || decoded._id || decoded.id;
-      let user = await User.findById(uId);
-      if (!user) {
-        user = await User.findOne({ username: 'deepak_verma' });
-        if (!user) {
-          user = new User({
-            username: 'deepak_verma',
-            email: 'deepak_verma@cricscore.pro',
-            password: 'password123',
-            virtualCoins: 1000,
-          });
-          await user.save();
-        }
-      }
-      req.user = user;
-      return next();
-    } catch (jwtErr) {
-      let user = await User.findOne({ username: 'deepak_verma' });
-      if (!user) {
-        user = new User({
-          username: 'deepak_verma',
-          email: 'deepak_verma@cricscore.pro',
-          password: 'password123',
-          virtualCoins: 1000,
-        });
-        await user.save();
-      }
-      req.user = user;
-      return next();
-    }
-  } catch (error) {
-    res.status(401).json({ error: 'Authentication error' });
   }
 };
 
@@ -166,10 +112,7 @@ router.post('/login', async (req, res) => {
         id: user._id,
         username: user.username,
         email: user.email,
-        virtualCoins: user.virtualCoins,
-        totalWins: user.totalWins,
-        totalMatches: user.totalMatches,
-        bestRank: user.bestRank
+        virtualCoins: user.virtualCoins
       }
     });
   } catch (error) {
@@ -177,18 +120,76 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Get user profile
+/**
+ * Career stats computed from the user's real fantasy entries:
+ * - totalMatches: distinct matches the user entered a team for
+ * - totalWins: contests finished 1st in (completed matches, at least 2 teams)
+ * - bestRank: best finishing position in a completed match
+ * - recentEntries: latest entries with points, rank and match state
+ */
+async function computeUserStats(userId) {
+  const teams = await FantasyTeam.find({ userId: String(userId) })
+    .sort({ updatedAt: -1 })
+    .limit(100)
+    .lean();
+  if (teams.length === 0) {
+    return { totalMatches: 0, totalWins: 0, bestRank: 0, recentEntries: [] };
+  }
+
+  const matchIds = [...new Set(teams.map((t) => t.matchId))];
+  const matches = await Match.find(
+    { matchId: { $in: matchIds } },
+    'matchId teamA teamB matchStarted matchEnded status date startTime'
+  ).lean();
+  const byId = new Map(matches.map((m) => [m.matchId, m]));
+
+  let totalWins = 0;
+  let bestRank = 0;
+  const entries = await Promise.all(teams.map(async (t) => {
+    const m = byId.get(t.matchId);
+    const scope = { matchId: t.matchId, contestId: t.contestId || 'general' };
+    const [ahead, entrants] = await Promise.all([
+      FantasyTeam.countDocuments({ ...scope, totalPoints: { $gt: t.totalPoints || 0 } }),
+      FantasyTeam.countDocuments(scope),
+    ]);
+    const rank = ahead + 1;
+    if (m?.matchEnded) {
+      if (rank === 1 && entrants >= 2) totalWins += 1;
+      if (!bestRank || rank < bestRank) bestRank = rank;
+    }
+    return {
+      matchId: t.matchId,
+      contestId: t.contestId || 'general',
+      fixture: m ? `${m.teamA} vs ${m.teamB}` : `Match ${t.matchId}`,
+      state: m ? (m.matchEnded ? 'completed' : m.matchStarted ? 'live' : 'upcoming') : 'unknown',
+      status: m?.status || '',
+      points: t.totalPoints || 0,
+      rank,
+      entrants,
+      updatedAt: t.updatedAt,
+    };
+  }));
+
+  return {
+    totalMatches: matchIds.length,
+    totalWins,
+    bestRank,
+    recentEntries: entries.slice(0, 6),
+  };
+}
+
+// Get user profile (with stats computed from real entries)
 router.get('/profile', requireAuth, async (req, res) => {
   try {
+    const stats = await computeUserStats(req.user._id);
     res.json({
       user: {
         id: req.user._id,
         username: req.user.username,
         email: req.user.email,
         virtualCoins: req.user.virtualCoins,
-        totalWins: req.user.totalWins,
-        totalMatches: req.user.totalMatches,
-        bestRank: req.user.bestRank
+        createdAt: req.user.createdAt,
+        ...stats,
       }
     });
   } catch (error) {
@@ -196,4 +197,4 @@ router.get('/profile', requireAuth, async (req, res) => {
   }
 });
 
-module.exports = { router, authenticateToken, requireAuth };
+module.exports = { router, requireAuth };

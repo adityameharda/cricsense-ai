@@ -1,471 +1,627 @@
 /**
- * CricSense RAG (Retrieval-Augmented Generation) Engine 2.0
- * Features:
- * 1. Natural Language Entity & Intent Extraction (Teams, Players, Venues, Formats)
- * 2. Multi-Vector Database & Knowledge Retrieval (Live Fixtures, Ground Vectors, Head-to-Head Records)
- * 3. Dynamic Statistical Synthesizer & Matchup Analyzer
- * 4. Dual-Mode Generative AI (Gemini 1.5 Flash API + Advanced Semantic Reasoning Engine)
+ * CricSense: answers cricket questions using only real data.
+ *
+ * Retrieval sources (all live, nothing hardcoded):
+ *  - the match record in MongoDB (teams, score, status, venue, format, start time)
+ *  - the Cricbuzz scorecard + live telemetry (batters, bowlers, run rates, recent balls)
+ *  - the Cricbuzz squads (roles, captains, keepers, announced playing XI)
+ *  - Cricbuzz player profiles (career stats per format, rankings, recent scores)
+ *  - fantasy points already calculated for this match (MatchPoint)
+ *
+ * How a question is resolved:
+ *  1. Teams named in the question ("Ind", "Aussies", "Proteas", "Perth"...) pick the match.
+ *  2. Otherwise the match from the previous answer (conversation memory), then the
+ *     match page the user is on.
+ *  3. Players named in the question are looked up in that match's squads/scorecard,
+ *     then in the national teams' Cricbuzz player lists. "he"/"his" refer to the
+ *     player from the previous answer.
+ *
+ * With GEMINI_API_KEY set, the retrieved facts and the recent conversation go to
+ * Gemini (newest Flash model available to the key, or GEMINI_MODEL) with strict
+ * instructions not to invent anything. Without a key, a deterministic answer is
+ * built from the same facts.
  */
-
-const Match = require('../models/match');
 const axios = require('axios');
+const Match = require('../models/match');
+const MatchPoint = require('../models/matchPoint');
+const cricketService = require('./cricketLiveService');
+const players = require('./playerService');
+const { teamMentionScore, teamsMentioned, mentionsWomen, isWomenTeam } = require('../helpers/teamAliases');
 
-// ── 1. COMPREHENSIVE VENUE KNOWLEDGE STORE ─────────────────────────
-const VENUE_KNOWLEDGE_STORE = {
-  "lord's, london": {
-    name: "Lord's Cricket Ground, London",
-    city: "London",
-    country: "England",
-    pitchType: "Traditional English surface with natural grass cover and the historic 8ft North-to-South slope. Significant early seam and swing movement under overcast skies.",
-    avgFirstInningsTest: 310,
-    avgFirstInningsT20: 172,
-    chaseWinRate: "48%",
-    dewImpact: "Minimal; atmospheric swing and cloud cover dictate ball trajectory.",
-    keyAdvantage: "Pace bowlers exploiting the slope with wobble-seam deliveries; top-order anchors who play late under the eyes."
-  },
-  "wankhede stadium, mumbai": {
-    name: "Wankhede Stadium, Mumbai",
-    city: "Mumbai",
-    country: "India",
-    pitchType: "Red-clay wicket offering high carry, true bounce, and rapid outfield. Excellent batting surface that quickens under evening floodlights.",
-    avgFirstInningsTest: 345,
-    avgFirstInningsT20: 184,
-    chaseWinRate: "63%",
-    dewImpact: "Heavy dew after 19:30 local time makes defending totals challenging for spinners.",
-    keyAdvantage: "Power hitters targeting short square boundaries (64m); seamers bowling yorkers and wide cross-seam balls in death overs."
-  },
-  "melbourne cricket ground, melbourne": {
-    name: "Melbourne Cricket Ground (MCG)",
-    city: "Melbourne",
-    country: "Australia",
-    pitchType: "Drop-in pitch offering steep bounce, good carry, and vast outfield dimensions.",
-    avgFirstInningsTest: 325,
-    avgFirstInningsT20: 164,
-    chaseWinRate: "52%",
-    dewImpact: "Low",
-    boundaryDimensions: "Massive 84m+ square boundaries requiring athletic running between wickets.",
-    keyAdvantage: "Tall hit-the-deck pacers targeting hard lengths; middle-order gap-finders."
-  },
-  "ma chidambaram stadium, chennai": {
-    name: "MA Chidambaram Stadium (Chepauk), Chennai",
-    city: "Chennai",
-    country: "India",
-    pitchType: "Dry, abrasive clay surface with variable bounce and significant grip for spinners from session 2 onwards.",
-    avgFirstInningsTest: 330,
-    avgFirstInningsT20: 158,
-    chaseWinRate: "44%",
-    dewImpact: "Moderate sea breeze",
-    keyAdvantage: "Finger spinners and wrist spinners bowling varying trajectories; batsmen with strong sweep and reverse-sweep proficiency."
-  },
-  "kensington oval, bridgetown, barbados": {
-    name: "Kensington Oval, Barbados",
-    city: "Bridgetown",
-    country: "Barbados",
-    pitchType: "Hard Caribbean deck with bounce and true pace. Coastal breezes aid late outswing.",
-    avgFirstInningsTest: 295,
-    avgFirstInningsT20: 165,
-    chaseWinRate: "54%",
-    dewImpact: "Moderate ocean humidity",
-    keyAdvantage: "Hit-the-deck express pacers and versatile all-rounders who contribute across both innings."
-  },
-  "eden gardens, kolkata": {
-    name: "Eden Gardens, Kolkata",
-    city: "Kolkata",
-    country: "India",
-    pitchType: "True sporting pitch with fast outfield and consistent carry. Excellent batting conditions with initial swing.",
-    avgFirstInningsTest: 340,
-    avgFirstInningsT20: 182,
-    chaseWinRate: "58%",
-    dewImpact: "High during night matches",
-    keyAdvantage: "Top-order aggressive stroke-makers and death bowlers possessing pinpoint yorkers."
-  },
-  "rawalpindi cricket stadium, rawalpindi": {
-    name: "Rawalpindi Cricket Stadium, Rawalpindi",
-    city: "Rawalpindi",
-    country: "Pakistan",
-    pitchType: "Flat, high-scoring surface with consistent bounce and little assistance for bowlers early on. Reverse swing becomes prominent as the ball scuffs.",
-    avgFirstInningsTest: 390,
-    avgFirstInningsT20: 190,
-    chaseWinRate: "55%",
-    dewImpact: "Low",
-    keyAdvantage: "Aggressive stroke players capable of long batting stints; reverse-swing pacers in old-ball phases."
-  },
-  "gabba, brisbane": {
-    name: "The Gabba, Brisbane",
-    city: "Brisbane",
-    country: "Australia",
-    pitchType: "Lively green wicket with steep bounce, pace, and early seam movement.",
-    avgFirstInningsTest: 335,
-    avgFirstInningsT20: 168,
-    chaseWinRate: "50%",
-    dewImpact: "Low",
-    keyAdvantage: "Fast bowlers operating at 140+ kph attacking the channel outside off stump."
-  }
-};
+const LIST_FIELDS = 'matchId teamA teamB scoreA scoreB status matchStarted matchEnded venue date startTime matchType';
 
-// ── 2. HEAD-TO-HEAD HISTORICAL ARCHIVE ─────────────────────────────
-const HEAD_TO_HEAD_ARCHIVE = {
-  "england vs pakistan": {
-    test: { played: 89, teamAWins: 29, teamBWins: 21, draws: 39, leader: "England (historic edge in English conditions)" },
-    t20: { played: 30, teamAWins: 20, teamBWins: 9, nr: 1, leader: "England" },
-    odi: { played: 92, teamAWins: 57, teamBWins: 32, nr: 3, leader: "England" },
-    tacticalNote: "In English conditions, England's seam attack and aggressive Bazball run-rates average 4.8 RPO vs Pakistan's pace and spin combinations."
-  },
-  "india vs australia": {
-    test: { played: 107, teamAWins: 32, teamBWins: 45, draws: 29, tie: 1, leader: "Australia overall, India in recent Border-Gavaskar series" },
-    t20: { played: 32, teamAWins: 20, teamBWins: 11, nr: 1, leader: "India" },
-    odi: { played: 151, teamAWins: 57, teamBWins: 84, nr: 10, leader: "Australia" },
-    tacticalNote: "High-intensity rivalry. India dominates spin-friendly tracks, while Australia's pace trio holds advantage on bouncy surfaces (Perth/Brisbane)."
-  },
-  "england vs south africa": {
-    test: { played: 153, teamAWins: 65, teamBWins: 35, draws: 53, leader: "England" },
-    t20: { played: 26, teamAWins: 12, teamBWins: 13, nr: 1, leader: "South Africa (balanced)" },
-    odi: { played: 70, teamAWins: 30, teamBWins: 34, nr: 6, leader: "South Africa" },
-    tacticalNote: "Fierce pace battles with Rabada/Nortje testing England's aggressive top order."
-  },
-  "west indies vs pakistan": {
-    test: { played: 54, teamAWins: 18, teamBWins: 21, draws: 15, leader: "Pakistan" },
-    t20: { played: 21, teamAWins: 7, teamBWins: 13, nr: 1, leader: "Pakistan" },
-    odi: { played: 137, teamAWins: 71, teamBWins: 63, nr: 3, leader: "West Indies" },
-    tacticalNote: "West Indies power hitting in middle overs clashes with Pakistan's death bowling."
-  }
-};
-
-// ── 3. ENTITY & INTENT EXTRACTION FROM QUERY ───────────────────────
-const KNOWN_TEAMS = [
-  { name: 'England', aliases: ['england', 'eng', 'english', 'british', 'bazball'] },
-  { name: 'Pakistan', aliases: ['pakistan', 'pak', 'pakistani', 'shaheens'] },
-  { name: 'India', aliases: ['india', 'ind', 'indian', 'bharat', 'men in blue'] },
-  { name: 'Australia', aliases: ['australia', 'aus', 'aussie', 'australian', 'baggy green'] },
-  { name: 'South Africa', aliases: ['south africa', 'sa', 'proteas', 'south african'] },
-  { name: 'West Indies', aliases: ['west indies', 'windies', 'caribbean', 'wi'] },
-  { name: 'New Zealand', aliases: ['new zealand', 'nz', 'kiwis', 'black caps'] },
-  { name: 'Sri Lanka', aliases: ['sri lanka', 'sl', 'lankans'] },
-  { name: 'Bangladesh', aliases: ['bangladesh', 'ban', 'tigers'] },
-  { name: 'Afghanistan', aliases: ['afghanistan', 'afg', 'afghan'] },
-  { name: 'Antigua and Barbuda Falcons', aliases: ['antigua', 'falcons'] },
-  { name: 'Barbados Tridents', aliases: ['barbados', 'tridents'] },
-  { name: 'Trinbago Knight Riders', aliases: ['trinbago', 'tkr', 'knight riders'] },
-  { name: 'Saint Lucia Kings', aliases: ['saint lucia', 'st lucia', 'kings'] },
-  { name: 'Jamaica Kingsmen', aliases: ['jamaica', 'kingsmen'] },
-  { name: 'St Kitts and Nevis Patriots', aliases: ['st kitts', 'patriots'] },
-  { name: 'Vida Kovai Kings', aliases: ['vida kovai', 'kovai kings', 'kovai'] },
-  { name: 'Trichy Grand Cholas', aliases: ['trichy', 'cholas'] },
-  { name: 'Madurai Panthers', aliases: ['madurai', 'panthers'] }
-];
-
-const KNOWN_VENUES = [
-  { key: "lord's, london", aliases: ["lord's", "lords", "london"] },
-  { key: "wankhede stadium, mumbai", aliases: ["wankhede", "mumbai"] },
-  { key: "melbourne cricket ground, melbourne", aliases: ["mcg", "melbourne"] },
-  { key: "ma chidambaram stadium, chennai", aliases: ["chepauk", "chidambaram", "chennai"] },
-  { key: "kensington oval, bridgetown, barbados", aliases: ["kensington", "barbados", "bridgetown"] },
-  { key: "eden gardens, kolkata", aliases: ["eden gardens", "kolkata"] },
-  { key: "rawalpindi cricket stadium, rawalpindi", aliases: ["rawalpindi"] },
-  { key: "gabba, brisbane", aliases: ["gabba", "brisbane"] }
-];
-
-function extractEntities(query = '') {
+// ── Intent detection ───────────────────────────────────────────────
+function detectIntent(query = '') {
   const q = query.toLowerCase();
-
-  // Detect teams (order by match position in text)
-  const detectedTeams = [];
-  for (const t of KNOWN_TEAMS) {
-    if (t.aliases.some(alias => {
-      const regex = new RegExp(`\\b${alias}\\b`, 'i');
-      return regex.test(q);
-    })) {
-      detectedTeams.push(t.name);
-    }
-  }
-
-  // Detect venue from query
-  let detectedVenueKey = null;
-  for (const v of KNOWN_VENUES) {
-    if (v.aliases.some(alias => q.includes(alias))) {
-      detectedVenueKey = v.key;
-      break;
-    }
-  }
-
-  // Detect format
-  let format = 't20';
-  if (q.includes('test') || q.includes('red ball') || q.includes('5 day') || q.includes('innings')) format = 'test';
-  else if (q.includes('odi') || q.includes('50 over') || q.includes('one day') || q.includes('world cup 50')) format = 'odi';
-  else if (q.includes('t20') || q.includes('t20i') || q.includes('twenty20') || q.includes('ipl')) format = 't20';
-
-  // Detect intent
-  const isWinProb = q.includes('win') || q.includes('chance') || q.includes('predict') || q.includes('probability') || q.includes('better') || q.includes('favourite') || q.includes('who will') || q.includes('higher');
-  const isFantasy = q.includes('captain') || q.includes('vice') || q.includes('pick') || q.includes('fantasy') || q.includes('dream') || q.includes('xi') || q.includes('points') || q.includes('team');
-  const isPitch = q.includes('pitch') || q.includes('dew') || q.includes('ground') || q.includes('weather') || q.includes('conditions') || q.includes('par score') || q.includes('venue');
-  const isPlayer = q.includes('player') || q.includes('batter') || q.includes('bowler') || q.includes('matchup') || q.includes('kohli') || q.includes('babar') || q.includes('root') || q.includes('bumrah') || q.includes('rohit') || q.includes('head');
-
-  return {
-    teams: detectedTeams,
-    venueKey: detectedVenueKey,
-    format,
-    intents: { isWinProb, isFantasy, isPitch, isPlayer }
-  };
+  if (/\b(captain|vice|fantasy|dream|pick|picks|points|lineup|line-up)\b/.test(q)) return 'fantasy';
+  if (/\b(win|winning|chance|predict|probability|favourite|favorite|who will|equation|need)\b/.test(q)) return 'equation';
+  if (/\b(pitch|dew|ground|weather|conditions|par score|venue|stadium|where)\b/.test(q)) return 'venue';
+  if (/\b(squad|squads|playing xi|playing 11|xi|team news|players)\b/.test(q)) return 'squads';
+  if (/\b(top scorer|best bowler|scorecard|batting|bowling|wickets|runs|performers?)\b/.test(q)) return 'scorecard';
+  if (/\b(when|start|starts|starting|time|begin)\b/.test(q)) return 'start';
+  return 'summary';
 }
 
-// ── 4. RETRIEVE BEST MATCH FROM DATABASE ───────────────────────────
-async function retrieveRelevantMatch(entities, matchId, activeMatch) {
-  // If activeMatch is explicitly provided and matches context, use it
-  if (activeMatch && (!entities.teams.length || entities.teams.some(t => activeMatch.teamA?.toLowerCase().includes(t.toLowerCase()) || activeMatch.teamB?.toLowerCase().includes(t.toLowerCase())))) {
-    return activeMatch;
+const LIST_RE = /\b(which|what|any|all)\b.*\bmatch(es)?\b|\blive matches\b|\bmatches (today|now|live|on)\b|\bschedule\b|\bfixtures\b|\bwhat'?s on\b/i;
+const PAST_RE = /\b(result|won|win\b.*\blast|who won|last match|previous|yesterday|final score)\b/i;
+const PRONOUN_RE = /\b(he|his|him|he's|she|her|she's)\b/i;
+
+// ── Match retrieval ────────────────────────────────────────────────
+const stateRank = (m) => (m.matchStarted && !m.matchEnded ? 0 : !m.matchStarted && !m.matchEnded ? 1 : 2);
+const timeOf = (m) => m.startTime || (m.date ? Date.parse(m.date) : 0) || 0;
+
+async function matchesNamedIn(query) {
+  const all = await Match.find({}, LIST_FIELDS).lean();
+  const women = mentionsWomen(query);
+  let scored = all
+    .map((m) => ({ m, score: teamMentionScore(query, m.teamA) + teamMentionScore(query, m.teamB) }))
+    .filter((x) => x.score > 0);
+  if (!scored.length) return [];
+
+  // Men's unless the question says women ("India women", "IND-W", "White Ferns")
+  const genderOk = scored.filter((x) => (isWomenTeam(x.m.teamA) || isWomenTeam(x.m.teamB)) === women);
+  if (genderOk.length) scored = genderOk;
+
+  const pastFirst = PAST_RE.test(query);
+  const now = Date.now();
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const ra = pastFirst ? (stateRank(a.m) === 2 ? -1 : stateRank(a.m)) : stateRank(a.m);
+    const rb = pastFirst ? (stateRank(b.m) === 2 ? -1 : stateRank(b.m)) : stateRank(b.m);
+    if (ra !== rb) return ra - rb;
+    // upcoming: soonest first; completed: most recent first
+    if (stateRank(a.m) === 1) return Math.abs(timeOf(a.m) - now) - Math.abs(timeOf(b.m) - now);
+    return timeOf(b.m) - timeOf(a.m);
+  });
+  return scored.map((x) => x.m);
+}
+
+async function loadMatch(id) {
+  if (!id) return null;
+  const m = await Match.findOne({ matchId: String(id) }, '-__v').lean();
+  // A match with runs on the board has started, whatever the flag says (older code marked
+  // Tests at Stumps/Lunch/Tea as "not started")
+  if (m && !m.matchStarted && [m.scoreA, m.scoreB].some((s) => s && !/^(0\/0 \(0(\.0)?\))?$/.test(String(s).trim()))) {
+    m.matchStarted = true;
+  }
+  return m;
+}
+
+/**
+ * Pick the match a question is about.
+ * Teams named in the question win; otherwise the conversation's last match, then the page's.
+ */
+async function resolveMatch(query, { pageMatchId, lastMatchId, named }) {
+  if (named.length) {
+    // If the page's or the conversation's match involves the named team, stay on it
+    for (const id of [lastMatchId, pageMatchId]) {
+      const hit = id && named.find((m) => String(m.matchId) === String(id));
+      if (hit && teamMentionScore(query, hit.teamA) + teamMentionScore(query, hit.teamB) >=
+        teamMentionScore(query, named[0].teamA) + teamMentionScore(query, named[0].teamB)) {
+        return { match: await loadMatch(hit.matchId), how: 'named' };
+      }
+    }
+    return { match: await loadMatch(named[0].matchId), how: 'named' };
+  }
+  for (const [id, how] of [[lastMatchId, 'conversation'], [pageMatchId, 'page']]) {
+    const m = await loadMatch(id);
+    if (m) return { match: m, how };
+  }
+  return { match: null, how: 'none' };
+}
+
+// ── Context building (real data only) ──────────────────────────────
+const playerName = (p) => (typeof p === 'object' && p ? p.name || '' : String(p || ''));
+
+async function buildMatchContext(match) {
+  const ctx = { match, scorecard: null, squads: null, fantasyTop: [] };
+  const jobs = [];
+  if (match.matchStarted) {
+    jobs.push(cricketService.fetchMatchScorecard(match.matchId).then((s) => { ctx.scorecard = s; }).catch(() => {}));
+    jobs.push(MatchPoint.find({ matchId: match.matchId }).sort({ points: -1 }).limit(5).lean()
+      .then((r) => { ctx.fantasyTop = r; }).catch(() => {}));
+  }
+  if (!match.matchEnded) {
+    jobs.push(cricketService.fetchMatchSquads(match.matchId, match).then((s) => { ctx.squads = s; }).catch(() => {}));
+  }
+  await Promise.all(jobs);
+  return ctx;
+}
+
+/** Everyone involved in this match, with Cricbuzz ids (squads + scorecard). */
+function matchPeople(ctx) {
+  if (!ctx) return [];
+  const m = ctx.match;
+  const people = [
+    ...(ctx.squads?.squadA || []).map((p) => ({ id: p.id, name: p.name, team: m.teamA })),
+    ...(ctx.squads?.squadB || []).map((p) => ({ id: p.id, name: p.name, team: m.teamB })),
+  ];
+  for (const inn of ctx.scorecard?.innings || []) {
+    for (const b of inn.batting || []) people.push({ id: b.id, name: b.batsman, team: inn.teamName });
+    for (const b of inn.bowling || []) people.push({ id: b.id, name: b.bowler, team: '' });
+  }
+  return people.filter((p) => p.id);
+}
+
+/**
+ * Which player is the question about?
+ * Match squads/scorecard first, then national-team player lists, then "he/his" → last player.
+ */
+async function resolvePlayer(query, ctx, { lastPlayerId, matchNamed }) {
+  const fromMatch = players.findPlayers(query, matchPeople(ctx));
+  if (fromMatch.best || fromMatch.ambiguous.length) return fromMatch;
+
+  // Beyond the match: only when it reads like a player question, or nothing else matched
+  if (players.looksLikePlayerQuestion(query) || !matchNamed) {
+    const teams = teamsMentioned(query);
+    if (ctx?.match) teams.push(ctx.match.teamA, ctx.match.teamB);
+    let found = players.findPlayers(query, await players.directoryFor(teams));
+    if (!found.best && !found.ambiguous.length && teams.length) {
+      found = players.findPlayers(query, await players.directoryFor([]));
+    }
+    if (found.best || found.ambiguous.length) return found;
   }
 
-  // If matchId is provided
-  if (matchId) {
-    try {
-      const match = await Match.findOne({
-        $or: [{ matchId }, { _id: matchId.length === 24 ? matchId : null }]
-      });
-      if (match) return match;
-    } catch (err) {
-      console.warn('Match ID lookup error:', err.message);
+  if (lastPlayerId && PRONOUN_RE.test(query)) return { best: { id: String(lastPlayerId) }, ambiguous: [], carried: true };
+  return { best: null, ambiguous: [] };
+}
+
+// What the player did in this match (scorecard) and whether they're in the XI
+function playerInMatch(ctx, profile) {
+  if (!ctx || !profile) return [];
+  const same = (id, name) => (id && String(id) === String(profile.id)) || (name && name.toLowerCase() === profile.name.toLowerCase());
+  const out = [];
+  for (const inn of ctx.scorecard?.innings || []) {
+    for (const b of inn.batting || []) {
+      if (same(b.id, b.batsman)) out.push(`Batting in ${inn.inning}: ${b.r} (${b.b}), ${b['4s']}x4, ${b['6s']}x6, ${b.dismissal}`);
+    }
+    for (const b of inn.bowling || []) {
+      if (same(b.id, b.bowler)) out.push(`Bowling in ${inn.inning}: ${b.w}/${b.r} in ${b.o} overs (econ ${b.eco})`);
     }
   }
+  const ms = ctx.scorecard?.miniscore;
+  if (ms && !ctx.match.matchEnded) {
+    for (const p of [ms.striker, ms.nonStriker]) if (p?.name && same(null, p.name)) out.push(`At the crease now: ${p.runs ?? '?'} (${p.balls ?? '?'})`);
+    if (ms.bowler?.name && same(null, ms.bowler.name)) out.push(`Bowling now: ${ms.bowler.wickets ?? 0}-${ms.bowler.runs ?? 0} (${ms.bowler.overs ?? 0} ov)`);
+  }
+  const squadEntry = [...(ctx.squads?.squadA || []), ...(ctx.squads?.squadB || [])].find((p) => same(p.id, p.name));
+  if (squadEntry && !ctx.match.matchStarted) {
+    out.push(squadEntry.playingXI === true ? 'In the announced playing XI' : squadEntry.playingXI === false ? 'On the bench (not in the playing XI)' : 'In the squad (playing XI not announced yet)');
+  }
+  return out;
+}
 
-  // If query mentions 2 teams (e.g. "pakistan vs england" or "west indies vs pakistan")
-  if (entities.teams.length >= 2) {
-    const t1 = entities.teams[0];
-    const t2 = entities.teams[1];
+function matchFacts(ctx) {
+  const { match: m, scorecard: sc, squads, fantasyTop } = ctx;
+  const lines = [];
+  lines.push(`Match: ${m.teamA} vs ${m.teamB} (${m.matchType || 'format unknown'})`);
+  lines.push(`Venue: ${m.venue || 'not available'}`);
+  if (m.startTime) lines.push(`Scheduled start: ${new Date(m.startTime).toISOString()} (${istTime(m.startTime)} IST)`);
+  lines.push(`State: ${m.matchEnded ? 'completed' : m.matchStarted ? 'in progress' : 'not started'}`);
+  lines.push(`Status: ${m.status || 'not available'}`);
+  if (m.matchStarted) lines.push(`Score: ${m.teamA} ${scoreOf(m.scoreA)} | ${m.teamB} ${scoreOf(m.scoreB)}`);
 
-    try {
-      const found = await Match.findOne({
-        $or: [
-          { teamA: new RegExp(t1, 'i'), teamB: new RegExp(t2, 'i') },
-          { teamA: new RegExp(t2, 'i'), teamB: new RegExp(t1, 'i') }
-        ]
-      });
-      if (found) return found;
-    } catch (err) {
-      console.warn('Dual team regex lookup error:', err.message);
-    }
+  const ms = sc?.miniscore;
+  if (ms && !m.matchEnded) {
+    if (ms.striker?.name) lines.push(`At the crease: ${ms.striker.name} ${ms.striker.runs ?? '?'} (${ms.striker.balls ?? '?'})${ms.nonStriker?.name ? `, ${ms.nonStriker.name} ${ms.nonStriker.runs ?? '?'} (${ms.nonStriker.balls ?? '?'})` : ''}`);
+    if (ms.bowler?.name) lines.push(`Bowling: ${ms.bowler.name} ${ms.bowler.wickets ?? 0}-${ms.bowler.runs ?? 0} (${ms.bowler.overs ?? 0} ov)`);
+    if (ms.currentRunRate != null) lines.push(`Current run rate: ${ms.currentRunRate}`);
+    if (ms.requiredRunRate) lines.push(`Required run rate: ${ms.requiredRunRate}`);
+    if (ms.target) lines.push(`Target: ${ms.target}`);
+    if (ms.recentBalls) lines.push(`Recent balls: ${ms.recentBalls}`);
+    if (ms.partnership?.runs != null) lines.push(`Partnership: ${ms.partnership.runs} (${ms.partnership.balls ?? '?'} balls)`);
   }
 
-  // If query mentions 1 team
-  if (entities.teams.length === 1) {
-    const t1 = entities.teams[0];
-    try {
-      const found = await Match.findOne({
-        $or: [
-          { teamA: new RegExp(t1, 'i') },
-          { teamB: new RegExp(t1, 'i') }
-        ]
-      });
-      if (found) return found;
-    } catch (err) {
-      console.warn('Single team regex lookup error:', err.message);
-    }
+  (sc?.innings || []).forEach((inn) => {
+    const bat = (inn.batting || []).map((b) => `${b.batsman} ${b.r} (${b.b}) ${b.dismissal}`).join('; ');
+    const bowl = (inn.bowling || []).map((b) => `${b.bowler} ${b.w}-${b.r} (${b.o})`).join('; ');
+    lines.push(`${inn.inning}: ${inn.runs}/${inn.wickets} (${inn.overs} ov). Batting: ${bat || 'n/a'}. Bowling: ${bowl || 'n/a'}`);
+  });
+
+  if (squads && (squads.squadA?.length || squads.squadB?.length)) {
+    const describe = (team, list) => {
+      const xi = list.filter((p) => p.playingXI === true);
+      const shown = xi.length ? xi : list;
+      return `${team} ${xi.length ? 'playing XI' : 'squad (XI not announced)'}: ` + shown.map((p) =>
+        `${playerName(p)}${p.role ? ` [${p.role}]` : ''}${p.isCaptain ? ' (c)' : ''}${p.isKeeper ? ' (wk)' : ''}`
+      ).join(', ');
+    };
+    lines.push(describe(m.teamA, squads.squadA || []));
+    lines.push(describe(m.teamB, squads.squadB || []));
   }
 
-  // Fallback to latest upcoming or active match in DB
+  if (fantasyTop.length) {
+    lines.push('Top fantasy scorers in this match: ' + fantasyTop.map((p) => `${p.playerName} ${p.points} pts`).join(', '));
+  }
+  return lines;
+}
+
+function playerFacts(profile, inMatch = []) {
+  const lines = [`Player: ${profile.name}${profile.fullName !== profile.name ? ` (${profile.fullName})` : ''}`];
+  lines.push(`Team: ${profile.team || 'n/a'} · Role: ${profile.role || 'n/a'} · Bats: ${profile.battingStyle || 'n/a'} · Bowls: ${profile.bowlingStyle || 'n/a'}`);
+  if (profile.born) lines.push(`Born: ${profile.born}${profile.birthPlace ? `, ${profile.birthPlace}` : ''}`);
+  for (const [fmt, s] of Object.entries(profile.batting)) {
+    if (!s.Matches || s.Matches === '0') continue;
+    lines.push(`Career batting ${fmt}: ${s.Matches} matches, ${s.Innings} inns, ${s.Runs} runs, HS ${s.Highest}, avg ${s.Average}, SR ${s.SR}, 100s ${s['100s']}, 50s ${s['50s']}, 4s ${s.Fours}, 6s ${s.Sixes}`);
+  }
+  for (const [fmt, s] of Object.entries(profile.bowling)) {
+    if (!s.Wickets || s.Wickets === '0') continue;
+    lines.push(`Career bowling ${fmt}: ${s.Wickets} wickets in ${s.Innings} inns, avg ${s.Avg}, econ ${s.Eco}, best ${s.BBI}, 5w ${s['5w']}`);
+  }
+  const rk = rankingText(profile.rankings);
+  if (rk) lines.push(`ICC rankings: ${rk}`);
+  if (profile.recentBatting.length) lines.push(`Recent batting: ${profile.recentBatting.map((r) => `${r.score} vs ${r.opp} (${r.format}, ${r.date})`).join('; ')}`);
+  if (profile.recentBowling.length) lines.push(`Recent bowling: ${profile.recentBowling.map((r) => `${r.score} vs ${r.opp} (${r.format}, ${r.date})`).join('; ')}`);
+  inMatch.forEach((l) => lines.push(`In the current match: ${l}`));
+  return lines;
+}
+
+function rankingText(r = {}) {
+  const parts = [];
+  const label = { testRank: 'Test', odiRank: 'ODI', t20Rank: 'T20I', testBestRank: 'Test best', odiBestRank: 'ODI best', t20BestRank: 'T20I best' };
+  for (const [kind, name] of [['batting', 'batting'], ['bowling', 'bowling'], ['allRounder', 'all-rounder']]) {
+    const now = Object.entries(r[kind] || {}).filter(([k]) => !k.includes('Best')).map(([k, v]) => `${label[k] || k} #${v}`);
+    const best = Object.entries(r[kind] || {}).filter(([k]) => k.includes('Best')).map(([k, v]) => `${label[k] || k} #${v}`);
+    if (now.length || best.length) parts.push(`${name}: ${[...now, ...best].join(', ')}`);
+  }
+  return parts.join(' | ');
+}
+
+// Cricbuzz reports a side that hasn't batted as "0/0 (0)"
+const scoreOf = (s) => (!s || /^0\/0 \(0(\.0)?\)$/.test(String(s).trim()) ? 'yet to bat' : s);
+const istTime = (ms) => new Date(ms).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+// ── Deterministic answers (used when no LLM key is set) ────────────
+function equationAnswer(ctx) {
+  const { match: m, scorecard: sc } = ctx;
+  if (m.matchEnded) return `🏁 **Result:** ${m.status || 'Result not available'}\n\n• ${m.teamA}: ${scoreOf(m.scoreA)}\n• ${m.teamB}: ${scoreOf(m.scoreB)}`;
+  if (!m.matchStarted) {
+    return `⏳ **${m.teamA} vs ${m.teamB}** hasn't started yet (${m.status || 'scheduled'}).\n\n` +
+      'CricSense does not publish win percentages, because there is no verified model behind them. ' +
+      'Once play starts I can give you the live equation: runs needed, balls left, run rates and wickets in hand.';
+  }
+  const ms = sc?.miniscore || {};
+  const lines = [`📊 **State of play: ${m.teamA} vs ${m.teamB}**`, '', `• ${m.teamA}: ${scoreOf(m.scoreA)}`, `• ${m.teamB}: ${scoreOf(m.scoreB)}`, `• Status: ${m.status}`];
+  if (ms.target) lines.push(`• Target: ${ms.target}`);
+  if (ms.currentRunRate != null) lines.push(`• Current run rate: ${ms.currentRunRate}`);
+  if (ms.requiredRunRate) lines.push(`• Required run rate: ${ms.requiredRunRate}`);
+  if (ms.partnership?.runs != null) lines.push(`• Current partnership: ${ms.partnership.runs} (${ms.partnership.balls ?? '?'} balls)`);
+  return lines.join('\n');
+}
+
+function fantasyAnswer(ctx) {
+  const { match: m, squads, fantasyTop } = ctx;
+  if (m.matchStarted) {
+    if (!fantasyTop.length) {
+      return `No fantasy points have been calculated for **${m.teamA} vs ${m.teamB}** yet (they are worked out for matches with contest entries). Here is how players are doing on the scorecard:\n\n` + scorecardAnswer(ctx);
+    }
+    return `⚡ **Top fantasy scorers so far (${m.teamA} vs ${m.teamB})**\n\n` +
+      fantasyTop.map((p, i) => `${i + 1}. **${p.playerName}**: ${p.points} pts (${p.stats?.runs ?? 0} runs, ${p.stats?.wickets ?? 0} wkts, ${p.stats?.catches ?? 0} catches)`).join('\n') +
+      (m.matchEnded ? '' : '\n\nTeam entries are locked because the match has started.');
+  }
+  const all = [...(squads?.squadA || []).map((p) => ({ ...p, team: m.teamA })), ...(squads?.squadB || []).map((p) => ({ ...p, team: m.teamB }))];
+  if (!all.length) return `The squads for **${m.teamA} vs ${m.teamB}** haven't been announced on Cricbuzz yet. Check back closer to the start.`;
+  const xiKnown = all.some((p) => p.playingXI === true);
+  const pool = xiKnown ? all.filter((p) => p.playingXI) : all;
+  const byRole = (r) => pool.filter((p) => p.fantasyRole === r).map((p) => `${p.name} (${p.team}${p.isCaptain ? ', c' : ''})`);
+  return `🧢 **Fantasy picks for ${m.teamA} vs ${m.teamB}**\n\n` +
+    (xiKnown ? '✅ Playing XIs are announced. Only these players will score points.\n\n' : '⚠️ Playing XIs are not announced yet. Players who are left out will score 0, so re-check after the toss.\n\n') +
+    `• **All-rounders** (can score with bat and ball): ${byRole('ar').join(', ') || 'none listed'}\n` +
+    `• **Wicket-keepers**: ${byRole('wk').join(', ') || 'none listed'}\n` +
+    `• **Batters**: ${byRole('bat').join(', ') || 'none listed'}\n` +
+    `• **Bowlers**: ${byRole('bowl').join(', ') || 'none listed'}\n\n` +
+    'Your captain earns 2x points and your vice-captain 1.5x. Ask me about any player (for example "Kohli career stats") to compare form.';
+}
+
+function venueAnswer(ctx) {
+  const { match: m, scorecard: sc } = ctx;
+  const lines = [`🏟️ **${m.teamA} vs ${m.teamB}** is at **${m.venue || 'a venue not yet listed'}**`, ''];
+  const first = sc?.innings?.[0];
+  if (first) lines.push(`• First innings in this match: ${first.teamName} ${first.runs}/${first.wickets} (${first.overs} ov)`);
+  lines.push('• CricSense has no verified pitch, weather or dew report for this ground, so it won\'t guess one.');
+  return lines.join('\n');
+}
+
+function squadsAnswer(ctx) {
+  const { match: m, squads } = ctx;
+  if (!squads || (!squads.squadA?.length && !squads.squadB?.length)) {
+    return m.matchEnded ? `**${m.teamA} vs ${m.teamB}** is completed. See the Scorecard tab for who played.` :
+      `Squads for **${m.teamA} vs ${m.teamB}** aren't available on Cricbuzz yet.`;
+  }
+  const fmt = (team, list) => {
+    const xi = list.filter((p) => p.playingXI === true);
+    const shown = xi.length ? xi : list;
+    return `**${team}** ${xi.length ? '(playing XI)' : '(squad)'}: ` + shown.map((p) => `${p.name}${p.isCaptain ? ' (c)' : ''}${p.isKeeper ? ' (wk)' : ''}`).join(', ');
+  };
+  return `${fmt(m.teamA, squads.squadA || [])}\n\n${fmt(m.teamB, squads.squadB || [])}`;
+}
+
+function scorecardAnswer(ctx) {
+  const { match: m, scorecard: sc } = ctx;
+  if (!sc?.innings?.length) return `There's no scorecard yet for **${m.teamA} vs ${m.teamB}** (${m.status || 'not started'}).`;
+  return `📋 **${m.teamA} vs ${m.teamB}**: ${m.status}\n\n` + sc.innings.map((inn) => {
+    const bat = [...inn.batting].sort((a, b) => (b.r || 0) - (a.r || 0)).slice(0, 3).map((b) => `${b.batsman} ${b.r} (${b.b})`).join(', ');
+    const bowl = [...inn.bowling].sort((a, b) => (b.w || 0) - (a.w || 0) || (a.r || 0) - (b.r || 0)).slice(0, 3).map((b) => `${b.bowler} ${b.w}/${b.r}`).join(', ');
+    return `**${inn.inning}**: ${inn.runs}/${inn.wickets} (${inn.overs} ov)\n• Top batters: ${bat || 'n/a'}\n• Top bowlers: ${bowl || 'n/a'}`;
+  }).join('\n\n');
+}
+
+function startAnswer(ctx) {
+  const { match: m } = ctx;
+  if (m.matchEnded) return `**${m.teamA} vs ${m.teamB}** is over: ${m.status || 'result not available'}.`;
+  if (m.matchStarted) return `**${m.teamA} vs ${m.teamB}** is already under way: ${m.status}.`;
+  return `⏳ **${m.teamA} vs ${m.teamB}** (${(m.matchType || '').toUpperCase()}) starts ${m.startTime ? `**${istTime(m.startTime)} IST**` : 'at a time not yet published'}${m.venue ? ` at ${m.venue}` : ''}.`;
+}
+
+function summaryAnswer(ctx) {
+  const { match: m, scorecard: sc } = ctx;
+  if (!m.matchStarted) return startAnswer(ctx) + (m.status ? `\n\n${m.status}` : '');
+  const ms = sc?.miniscore;
+  const lines = [`🏏 **${m.teamA} vs ${m.teamB}**: ${m.status}`, '', `• ${m.teamA}: ${scoreOf(m.scoreA)}`, `• ${m.teamB}: ${scoreOf(m.scoreB)}`];
+  if (ms && !m.matchEnded) {
+    if (ms.striker?.name) lines.push(`• At the crease: ${ms.striker.name} ${ms.striker.runs ?? ''}${ms.striker.balls != null ? ` (${ms.striker.balls})` : ''}${ms.nonStriker?.name ? `, ${ms.nonStriker.name} ${ms.nonStriker.runs ?? ''}${ms.nonStriker.balls != null ? ` (${ms.nonStriker.balls})` : ''}` : ''}`);
+    if (ms.bowler?.name) lines.push(`• Bowling: ${ms.bowler.name} ${ms.bowler.wickets ?? 0}-${ms.bowler.runs ?? 0} (${ms.bowler.overs ?? 0} ov)`);
+    if (ms.recentBalls) lines.push(`• Recent: ${ms.recentBalls}`);
+  }
+  return lines.join('\n');
+}
+
+const ANSWERS = {
+  equation: equationAnswer, fantasy: fantasyAnswer, venue: venueAnswer, squads: squadsAnswer,
+  scorecard: scorecardAnswer, start: startAnswer, summary: summaryAnswer,
+};
+
+function playerAnswer(profile, query, inMatch = []) {
+  const q = query.toLowerCase();
+  const wantFmt = /\btests?\b/.test(q) ? 'Test' : /\bodis?\b|one.?day/.test(q) ? 'ODI' : /\bipl\b/.test(q) ? 'IPL' : /\bt20i?s?\b/.test(q) ? 'T20I' : null;
+  const lines = [`👤 **${profile.name}** (${[profile.team, profile.role].filter(Boolean).join(' · ')})`];
+  const style = [profile.battingStyle, profile.bowlingStyle].filter(Boolean).join(', ');
+  if (style) lines.push(style);
+  if (inMatch.length) lines.push('', '**In this match**', ...inMatch.map((l) => `• ${l}`));
+
+  const fmts = (obj, key) => Object.entries(obj).filter(([f, s]) => (!wantFmt || f === wantFmt) && s[key] && s[key] !== '0');
+  const bat = fmts(profile.batting, 'Matches');
+  if (bat.length) {
+    lines.push('', '**Career batting**');
+    bat.forEach(([f, s]) => lines.push(`• **${f}**: ${s.Runs} runs in ${s.Matches} matches · avg ${s.Average} · SR ${s.SR} · ${s['100s']}×100, ${s['50s']}×50 · HS ${s.Highest}`));
+  }
+  const bowlWanted = /\b(bowl|bowling|wickets?|economy|spell)\b/.test(q) || /bowler|allrounder|all-rounder/i.test(profile.role);
+  const bowl = fmts(profile.bowling, 'Wickets');
+  if (bowl.length && (bowlWanted || bowl.some(([, s]) => Number(s.Wickets) >= 20))) {
+    lines.push('', '**Career bowling**');
+    bowl.forEach(([f, s]) => lines.push(`• **${f}**: ${s.Wickets} wkts · avg ${s.Avg} · econ ${s.Eco} · best ${s.BBI} · ${s['5w']}×5w`));
+  }
+  const rk = rankingText(profile.rankings);
+  if (rk) lines.push('', `**ICC rankings**: ${rk}`);
+  const recent = bowlWanted && profile.recentBowling.length ? profile.recentBowling : profile.recentBatting;
+  if (recent.length) {
+    lines.push('', `**Recent ${recent === profile.recentBowling ? 'bowling' : 'scores'}**: ` + recent.slice(0, 5).map((r) => `${r.score} vs ${r.opp} (${r.format})`).join(', '));
+  }
+  if (lines.length <= 2) lines.push('', 'Cricbuzz has no career stats for this player yet.');
+  return lines.join('\n');
+}
+
+async function liveListAnswer() {
+  const all = await Match.find({ matchEnded: { $ne: true } }, LIST_FIELDS).lean();
+  const live = all.filter((m) => m.matchStarted).slice(0, 8);
+  const next = all.filter((m) => !m.matchStarted && m.startTime).sort((a, b) => a.startTime - b.startTime).slice(0, 5);
+  const lines = [];
+  if (live.length) lines.push('🔴 **Live right now**', ...live.map((m) => `• ${m.teamA} vs ${m.teamB}: ${m.status}`));
+  if (next.length) lines.push('', '⏳ **Coming up**', ...next.map((m) => `• ${m.teamA} vs ${m.teamB}: ${istTime(m.startTime)} IST`));
+  return { text: lines.join('\n').trim() || 'No live or upcoming matches are listed right now.', facts: lines };
+}
+
+// ── LLM layer (grounded strictly in the retrieved facts) ───────────
+const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/models';
+const MAX_MODEL_TRIES = 4;          // models tried per question before giving up
+const MODEL_TIMEOUT_MS = 15000;     // per attempt; an overloaded model shouldn't stall the chat
+const TOTAL_BUDGET_MS = 22000;      // after this, answer from the data without the LLM
+const STICKY_MS = 60 * 60 * 1000;   // keep using a model that answered; retry newer ones hourly
+const BENCH_MS = 15 * 60 * 1000;    // skip an overloaded/slow model for a while
+const LLM_COOLDOWN_MS = 10 * 60 * 1000;
+
+let modelList = { names: [], time: 0 }; // Flash models this key can call, newest first
+let preferred = { name: null, time: 0 }; // last model that answered
+const benchedUntil = new Map();          // model → time it may be tried again
+let llmBlockedUntil = 0;                 // set after key/billing problems
+
+/**
+ * Flash models this API key can call, newest first (stable → -latest → -preview).
+ * Read from the Gemini models list rather than hardcoded, refreshed every 12 hours.
+ */
+async function flashModels(key) {
+  if (modelList.names.length && Date.now() - modelList.time < 12 * 60 * 60 * 1000) return modelList.names;
   try {
-    const found = await Match.findOne({ matchStarted: false, matchEnded: false }).sort({ createdAt: -1 })
-      || await Match.findOne().sort({ createdAt: -1 });
-    return found || null;
+    const res = await axios.get(`${GEMINI_API}?pageSize=1000`, { headers: { 'x-goog-api-key': key }, timeout: 6000 });
+    const usable = (res.data?.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map((m) => m.name.replace(/^models\//, ''));
+    const version = (n) => parseFloat((n.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
+    const group = (re) => usable.filter((n) => re.test(n)).sort((a, b) => version(b) - version(a));
+    const names = [
+      ...group(/^gemini-\d+(\.\d+)?-flash$/),
+      ...group(/^gemini-\d+(\.\d+)?-flash-latest$/),
+      ...group(/^gemini-\d+(\.\d+)?-flash-preview$/),
+    ];
+    if (names.length) modelList = { names, time: Date.now() };
+    return names;
   } catch (err) {
-    return null;
+    console.warn('Gemini model list unavailable:', err.response?.status || err.message);
+    return modelList.names;
   }
 }
 
-// ── 5. RETRIEVE GROUND INTELLIGENCE ────────────────────────────────
-function retrieveVenue(explicitKey = null, venueName = '', fallbackTeams = []) {
-  if (explicitKey && VENUE_KNOWLEDGE_STORE[explicitKey]) {
-    return VENUE_KNOWLEDGE_STORE[explicitKey];
+/** Order to try models in: GEMINI_MODEL if set; else the model that last answered, then newest first. */
+async function modelsToTry(key) {
+  if (process.env.GEMINI_MODEL) return [process.env.GEMINI_MODEL];
+  const names = await flashModels(key);
+  const now = Date.now();
+  const benched = (n) => (benchedUntil.get(n) || 0) > now;
+  const ordered = [...names.filter((n) => !benched(n)), ...names.filter(benched)];
+  if (preferred.name && now - preferred.time < STICKY_MS && names.includes(preferred.name)) {
+    return [preferred.name, ...ordered.filter((n) => n !== preferred.name)];
   }
+  return ordered;
+}
 
-  const nameToSearch = (venueName || '').toLowerCase();
-  for (const [key, data] of Object.entries(VENUE_KNOWLEDGE_STORE)) {
-    if (nameToSearch.includes(key) || key.includes(nameToSearch) || nameToSearch.split(',')[0].includes(key.split(',')[0])) {
-      return data;
+const SYSTEM_PROMPT = [
+  'You are CricSense, the cricket assistant on the Striker live-score and fantasy app.',
+  'Answer using ONLY the DATA block of the latest message (fetched from Cricbuzz moments ago) and the earlier conversation.',
+  'Rules:',
+  '- Never invent scores, statistics, records, percentages, pitch reports, weather, injuries or player form. If the data does not contain the answer, say so plainly and suggest what you can answer instead.',
+  '- Do not give win probabilities or betting advice. For fantasy questions you may compare players using the stats provided and explain the trade-offs, but the choice is the user\'s.',
+  '- Follow-up questions ("what about him?", "and the squads?") refer to the match or player from the conversation.',
+  '- Reply in the language the user writes in (English, Hindi or Hinglish).',
+  '- Keep it short: 2 to 8 lines. Use **bold** for names and key numbers and "• " for bullet lines. No markdown tables or # headings.',
+].join('\n');
+
+async function askGemini(question, facts, history) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key || key.length < 16) return null;
+  if (Date.now() < llmBlockedUntil) return null;
+  const contents = [
+    ...history.map((h) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.text }] })),
+    { role: 'user', parts: [{ text: `DATA (retrieved ${new Date().toISOString()}):\n${facts.map((f) => `- ${f}`).join('\n')}\n\nQUESTION: ${question}` }] },
+  ];
+  // Gemini requires the conversation to start with a user turn
+  while (contents.length && contents[0].role !== 'user') contents.shift();
+
+  const candidates = (await modelsToTry(key)).slice(0, MAX_MODEL_TRIES);
+  let allRateLimited = candidates.length > 0;
+
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
+  for (const model of candidates) {
+    const timeLeft = deadline - Date.now();
+    if (timeLeft < 3000) { allRateLimited = false; break; }
+    const generationConfig = { maxOutputTokens: 2048 };
+    if (/^gemini-[3-9]/.test(model)) {
+      // Answers are grounded summaries of the data: light thinking is enough and much faster
+      generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+    } else {
+      generationConfig.temperature = 0.3; // Gemini 3+ works best at its default temperature
     }
-  }
-
-  // Team-based venue defaults
-  const allTeamNames = fallbackTeams.join(' ').toLowerCase();
-  if (allTeamNames.includes('england')) return VENUE_KNOWLEDGE_STORE["lord's, london"];
-  if (allTeamNames.includes('india')) return VENUE_KNOWLEDGE_STORE["wankhede stadium, mumbai"];
-  if (allTeamNames.includes('australia')) return VENUE_KNOWLEDGE_STORE["melbourne cricket ground, melbourne"];
-  if (allTeamNames.includes('pakistan')) return VENUE_KNOWLEDGE_STORE["rawalpindi cricket stadium, rawalpindi"];
-  if (allTeamNames.includes('west indies')) return VENUE_KNOWLEDGE_STORE["kensington oval, bridgetown, barbados"];
-
-  return {
-    name: venueName || "International Cricket Ground",
-    country: "International",
-    pitchType: "Balanced multi-day sporting track with good carry and bounce for pace bowlers and steady wear.",
-    avgFirstInningsTest: 320,
-    avgFirstInningsT20: 168,
-    chaseWinRate: "50%",
-    dewImpact: "Moderate",
-    keyAdvantage: "Top-order batsman discipline and consistent line-and-length bowling."
-  };
-}
-
-// ── 6. DYNAMIC RAG PROMPT & REASONING GENERATOR ────────────────────
-async function generateCricSenseResponse(query, matchId, clientActiveMatch) {
-  const q = String(query || '').trim();
-  const entities = extractEntities(q);
-  const match = await retrieveRelevantMatch(entities, matchId, clientActiveMatch);
-
-  const teamA = entities.teams[0] || match?.teamA || 'England';
-  const teamB = entities.teams[1] || match?.teamB || (teamA.toLowerCase().includes('england') ? 'Pakistan' : 'Australia');
-  const format = entities.format || (match?.matchType ? match.matchType.toLowerCase() : 'test');
-
-  const venueData = retrieveVenue(entities.venueKey, match?.venue, [teamA, teamB]);
-
-  // Retrieve H2H key
-  const h2hKey1 = `${teamA.toLowerCase()} vs ${teamB.toLowerCase()}`;
-  const h2hKey2 = `${teamB.toLowerCase()} vs ${teamA.toLowerCase()}`;
-  const h2h = HEAD_TO_HEAD_ARCHIVE[h2hKey1] || HEAD_TO_HEAD_ARCHIVE[h2hKey2] || null;
-
-  // Retrieve actual match score if present
-  const scoreA = match?.scoreA || '0/0 (0)';
-  const scoreB = match?.scoreB || '0/0 (0)';
-  const matchStatus = match?.status || 'Scheduled Fixture';
-  const squadA = (match?.squadA || []).slice(0, 7);
-  const squadB = (match?.squadB || []).slice(0, 7);
-
-  // If Gemini API Key is available, use generative model with retrieved RAG context
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey && geminiKey.length > 15 && geminiKey !== 'placeholder_gemini_key') {
     try {
-      const augmentedPrompt = `You are CricSense AI, an elite cricket analytics intelligence and fantasy sports expert.
-Use the following retrieved real-time ground, head-to-head, and match intelligence to answer the user's question with precise facts, bullet points, and strategic depth.
-
-[RETRIEVED RAG CONTEXT]
-- Fixture: ${teamA} vs ${teamB} (${format.toUpperCase()})
-- Ground: ${venueData.name}
-- Pitch Profile: ${venueData.pitchType}
-- Average 1st Innings: ${format === 'test' ? venueData.avgFirstInningsTest : venueData.avgFirstInningsT20} runs
-- Chasing Advantage: ${venueData.chaseWinRate}
-- Dew/Atmosphere: ${venueData.dewImpact}
-- Tactical Ground Edge: ${venueData.keyAdvantage}
-${h2h ? `- Head-to-Head (${format.toUpperCase()}): ${JSON.stringify(h2h[format] || h2h)}` : ''}
-${match ? `- Match Telemetry: ${teamA}: ${scoreA} | ${teamB}: ${scoreB} (Status: ${matchStatus})` : ''}
-${squadA.length ? `- Squad Sample: ${teamA}: ${squadA.join(', ')} | ${teamB}: ${squadB.join(', ')}` : ''}
-
-User Prompt: "${q}"
-
-Format your response cleanly with clear section headings, bold highlights, numerical stats, and actionable takeaways.`;
-
-      const gRes = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
-        {
-          contents: [{ role: 'user', parts: [{ text: augmentedPrompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 600 }
-        },
-        { timeout: 8000 }
+      const res = await axios.post(
+        `${GEMINI_API}/${model}:generateContent`,
+        { systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] }, contents, generationConfig },
+        { timeout: Math.min(MODEL_TIMEOUT_MS, timeLeft), headers: { 'x-goog-api-key': key } }
       );
-
-      const reply = gRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (reply) {
-        return {
-          reply,
-          retrievedContext: {
-            fixture: `${teamA} vs ${teamB}`,
-            venue: venueData.name,
-            format: format.toUpperCase(),
-            scores: `${teamA} (${scoreA}) | ${teamB} (${scoreB})`,
-            source: 'gemini-1.5-flash-rag'
-          }
-        };
-      }
+      const text = res.data?.candidates?.[0]?.content?.parts?.filter((p) => !p.thought).map((p) => p.text).join('').trim();
+      if (!text) { allRateLimited = false; continue; }
+      if (preferred.name !== model) console.log(`CricSense: using ${model}`);
+      preferred = { name: model, time: preferred.name === model ? preferred.time : Date.now() };
+      return { text, model };
     } catch (err) {
-      console.warn('Gemini RAG fallback to semantic engine:', err.message);
-    }
-  }
-
-  // ── ADVANCED DYNAMIC SEMANTIC RAG REASONING ENGINE ──────────────
-  let reply = '';
-
-  if (entities.intents.isWinProb || (!entities.intents.isFantasy && !entities.intents.isPitch && !entities.intents.isPlayer)) {
-    // Dynamic Win Probability & Prediction Analysis
-    let probA = 54;
-    let probB = 46;
-
-    if (h2h && h2h[format]) {
-      const stats = h2h[format];
-      const total = (stats.teamAWins || 0) + (stats.teamBWins || 0) + (stats.draws || 0);
-      if (total > 0) {
-        probA = Math.round(((stats.teamAWins + (stats.draws ? stats.draws * 0.3 : 0)) / total) * 100);
-        probB = 100 - probA;
+      const status = err.response?.status;
+      console.warn(`CricSense LLM (${model}) failed:`, status || err.code || err.message, (err.response?.data?.error?.message || '').slice(0, 160));
+      // The key itself is unusable (wrong key, billing, permission): stop and pause
+      if ([401, 402, 403].includes(status)) {
+        llmBlockedUntil = Date.now() + LLM_COOLDOWN_MS;
+        console.warn('CricSense: Gemini paused for 10 minutes (key or billing problem); using data-only answers.');
+        return null;
       }
+      if (status !== 429) allRateLimited = false;
+      if (preferred.name === model) preferred = { name: null, time: 0 };
+      // Not offered to this key: skip for 12h; overloaded/slow/quota: skip for 15 min
+      benchedUntil.set(model, Date.now() + (status === 404 ? 12 * 60 * 60 * 1000 : BENCH_MS));
+      // 404/400 (not available), 429 (this model's quota), 5xx (overloaded), timeout: try the next model
     }
-
-    if (venueData.name.includes("Lord's") && (teamA.includes('England') || teamB.includes('England'))) {
-      if (teamA.includes('England')) { probA = Math.min(68, probA + 8); probB = 100 - probA; }
-      else { probB = Math.min(68, probB + 8); probA = 100 - probB; }
-    }
-
-    const favored = probA > probB ? teamA : teamB;
-    const underdog = probA > probB ? teamB : teamA;
-    const favoredProb = Math.max(probA, probB);
-    const underdogProb = Math.min(probA, probB);
-
-    reply = `📊 **Win Probability & Tactical Breakdown (${format.toUpperCase()}):**\n\n` +
-      `• **${favored}**: **${favoredProb}%** Win Index\n` +
-      `• **${underdog}**: **${underdogProb}%** Win Index\n\n` +
-      `🏟️ **Venue Dynamics at ${venueData.name}:**\n` +
-      `• **Pitch Nature**: ${venueData.pitchType}\n` +
-      `• **Par Score**: ~${format === 'test' ? venueData.avgFirstInningsTest : venueData.avgFirstInningsT20} in 1st Innings (Chasing win rate: ${venueData.chaseWinRate}).\n\n` +
-      `💡 **Deciding Matchup Factors:**\n` +
-      `1. **Conditions Advantage**: ${venueData.keyAdvantage}\n` +
-      `2. **Historical Form**: ${h2h ? `${h2h[format]?.leader || h2h.tacticalNote}` : `In recent ${format.toUpperCase()} fixtures, top-order stability in the first 25 overs determines 76% of match outcomes.`}\n` +
-      `${match && match.scoreA && match.scoreA !== '0/0 (0)' ? `3. **Live Match State**: ${match.teamA} (${match.scoreA}) vs ${match.teamB} (${match.scoreB}) — *${matchStatus}*` : `3. **Key Battle**: Powerplay bowling penetration vs middle-order anchor strike rotation.`}`;
   }
-  else if (entities.intents.isFantasy) {
-    // Dynamic Fantasy Captaincy & Dream 11 ROI Analysis
-    const starA = squadA[0] || (teamA.includes('India') ? 'Rohit Sharma' : teamA.includes('England') ? 'Joe Root' : teamA.includes('Pakistan') ? 'Babar Azam' : teamA.includes('West Indies') ? 'Nicholas Pooran' : 'Top Order Anchor');
-    const bowlerA = squadA.find(p => p.toLowerCase().includes('bumrah') || p.toLowerCase().includes('archer') || p.toLowerCase().includes('shaheen') || p.toLowerCase().includes('starc') || p.toLowerCase().includes('russell')) || squadA[squadA.length - 1] || 'Lead Strike Pacer';
-    const starB = squadB[0] || (teamB.includes('Australia') ? 'Travis Head' : teamB.includes('Pakistan') ? 'Babar Azam' : teamB.includes('South Africa') ? 'Quinton de Kock' : teamB.includes('India') ? 'Virat Kohli' : 'Key Batter');
+  if (allRateLimited) {
+    llmBlockedUntil = Date.now() + LLM_COOLDOWN_MS;
+    console.warn('CricSense: every Gemini model is rate-limited; paused for 10 minutes.');
+  }
+  return null;
+}
 
-    reply = `⚡ **Fantasy Dream 11 & Captaincy Optimization (${format.toUpperCase()}):**\n\n` +
-      `• 👑 **Captain Pick (2x Points)**: **${starA}** (${teamA})\n` +
-      `  *Rationale*: Displays highest consistency index and balls-per-boundary ratio on ${venueData.name.split(',')[0]} pitch.\n\n` +
-      `• ⚡ **Vice-Captain Pick (1.5x Points)**: **${bowlerA}** or **${starB}**\n` +
-      `  *Rationale*: Projected for high wicket probability in early spell and death overs (34% higher fantasy point ceiling).\n\n` +
-      `• 🛡️ **Value All-Rounder Picks**: All-rounders who bat in top 5 and bowl 3+ overs yield the safest floor on this track.\n\n` +
-      `🏟️ **Venue Factor**: Par score is ~${format === 'test' ? venueData.avgFirstInningsTest : venueData.avgFirstInningsT20} runs at ${venueData.name}.`;
+// ── Entry point ────────────────────────────────────────────────────
+/**
+ * @param {object} p
+ * @param {string} p.query        the question
+ * @param {string} [p.pageMatchId] match page the user is on
+ * @param {string} [p.lastMatchId] match the previous answer was about
+ * @param {string} [p.lastPlayerId] player the previous answer was about
+ * @param {{role:'user'|'assistant', text:string}[]} [p.history] recent conversation
+ */
+async function generateCricSenseResponse({ query, pageMatchId, lastMatchId, lastPlayerId, history = [] }) {
+  const q = String(query || '').trim();
+  const named = await matchesNamedIn(q);
+  const namedTeams = named.length > 0;
+
+  // "Which matches are live?": no specific match needed
+  if (LIST_RE.test(q) && !namedTeams) {
+    const list = await liveListAnswer();
+    const llm = await askGemini(q, list.facts, history);
+    return { reply: llm?.text || list.text, retrievedContext: { source: sourceLabel(llm) } };
   }
-  else if (entities.intents.isPitch) {
-    // Dynamic Pitch, Weather & Ground Intelligence
-    reply = `🏟️ **Ground & Pitch Intelligence for ${venueData.name}:**\n\n` +
-      `• **Pitch Characteristics**: ${venueData.pitchType}\n` +
-      `• **Average 1st Innings Par**: ${format === 'test' ? venueData.avgFirstInningsTest : venueData.avgFirstInningsT20} runs\n` +
-      `• **Toss & Chase Conversion**: Teams batting second have a **${venueData.chaseWinRate}** historical win rate.\n` +
-      `• **Atmospheric & Dew Factor**: ${venueData.dewImpact}\n\n` +
-      `🎯 **Tactical Recommendation**: ${venueData.keyAdvantage}`;
+
+  const { match, how } = await resolveMatch(q, { pageMatchId, lastMatchId, named });
+  const ctx = match ? await buildMatchContext(match) : null;
+
+  const found = await resolvePlayer(q, ctx, { lastPlayerId, matchNamed: namedTeams });
+  if (!found.best && found.ambiguous.length > 1) {
+    const names = found.ambiguous.map((p) => `• ${p.name}${p.team ? ` (${p.team})` : ''}`).join('\n');
+    return {
+      reply: `Which player do you mean?\n\n${names}\n\nAsk again with the full name.`,
+      retrievedContext: { ...matchContext(match), source: 'player-lookup' },
+    };
   }
-  else {
-    // Dynamic Matchup & General Query Analysis
-    reply = `🏏 **CricSense Tactical Intelligence for ${teamA} vs ${teamB}:**\n\n` +
-      `• **Fixture**: ${teamA} vs ${teamB} (${format.toUpperCase()})\n` +
-      `• **Venue**: ${venueData.name}\n` +
-      `• **Pitch Profile**: ${venueData.pitchType}\n` +
-      `• **Historical Baseline**: ${h2h ? h2h.tacticalNote : 'Teams controlling overs 7–15 with dot-ball suppression win 80% of fixtures at this ground.'}\n` +
-      `• **Tactical Edge**: ${venueData.keyAdvantage}`;
+
+  const profile = found.best ? await players.fetchPlayerProfile(found.best.id) : null;
+
+  // A national side was named ("Aussies", "Proteas") but nothing in the feed involves it:
+  // say so instead of answering about a different match
+  const asked = teamsMentioned(q);
+  if (!profile && asked.length && !namedTeams) {
+    const list = await liveListAnswer();
+    const names = asked.map((t) => t.replace(/\b[a-z]/g, (c) => c.toUpperCase())).join(' / ');
+    return {
+      reply: `There's no live, upcoming or recent **${names}** match in the Cricbuzz feed right now.\n\n${list.text}`,
+      retrievedContext: { source: 'match-lookup' },
+    };
   }
+  // A player question about someone not in this match shouldn't drag in an unrelated match
+  const useMatch = ctx && (!profile || namedTeams || how !== 'conversation' || playerInMatch(ctx, profile).length);
+
+  if (!profile && !ctx) {
+    const list = await liveListAnswer();
+    return {
+      reply: "I couldn't tell which match or player you mean. Name a team (\"Ind\", \"Aussies\", \"Proteas\"...) or a player (\"Kohli career stats\"), or open a match and ask from there." +
+        `\n\n${list.text}`,
+      retrievedContext: { source: 'match-lookup' },
+    };
+  }
+
+  const inMatch = profile && useMatch ? playerInMatch(ctx, profile) : [];
+  const facts = [
+    ...(useMatch ? matchFacts(ctx) : []),
+    ...(profile ? playerFacts(profile, inMatch) : []),
+  ];
+  const llm = await askGemini(q, facts, history);
+  const reply = llm?.text || (profile ? playerAnswer(profile, q, inMatch) : ANSWERS[detectIntent(q)](ctx));
 
   return {
     reply,
     retrievedContext: {
-      fixture: `${teamA} vs ${teamB}`,
-      venue: venueData.name,
-      format: format.toUpperCase(),
-      scores: `${teamA}: ${scoreA} | ${teamB}: ${scoreB}`,
-      source: 'dynamic-semantic-rag-engine'
-    }
+      ...(useMatch ? matchContext(match) : {}),
+      ...(profile ? { playerId: profile.id, player: profile.name, profileUrl: profile.url } : {}),
+      source: sourceLabel(llm),
+    },
   };
 }
 
-module.exports = {
-  extractEntities,
-  retrieveRelevantMatch,
-  retrieveVenue,
-  generateCricSenseResponse,
-  VENUE_KNOWLEDGE_STORE,
-  HEAD_TO_HEAD_ARCHIVE
-};
+function matchContext(match) {
+  if (!match) return {};
+  return {
+    matchId: String(match.matchId),
+    fixture: `${match.teamA} vs ${match.teamB}`,
+    venue: match.venue || '',
+    format: (match.matchType || '').toUpperCase(),
+    scores: `${match.teamA}: ${scoreOf(match.scoreA)} | ${match.teamB}: ${scoreOf(match.scoreB)}`,
+    status: match.status || '',
+  };
+}
+
+const sourceLabel = (llm) => (llm ? `${llm.model} + Cricbuzz data` : 'Cricbuzz data');
+
+module.exports = { generateCricSenseResponse, detectIntent };

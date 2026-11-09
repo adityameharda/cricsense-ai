@@ -28,23 +28,16 @@ function checkMatchEntryEligibility(match) {
     };
   }
 
-  // 3. 2-Minute Deadline cutoff check
-  if (match.dateTimeGMT || match.date) {
-    const timeStr = match.dateTimeGMT || match.date;
-    const matchTime = new Date(timeStr).getTime();
-
-    // Check if matchTime is a valid future timestamp
-    if (!isNaN(matchTime) && matchTime > 1600000000000) {
-      const now = Date.now();
-      const diffMs = matchTime - now;
-
-      // If scheduled start time is in the past or within 2 minutes (120,000 ms)
-      if (diffMs <= 2 * 60 * 1000 && diffMs > -6 * 60 * 60 * 1000) {
-        return {
-          eligible: false,
-          error: 'Not applicable now. Contests and squad entries close 2 minutes before match start.'
-        };
-      }
+  // 3. 2-minute deadline, using the real scheduled start time from Cricbuzz.
+  // (A date-only value like "2026-11-10" is midnight UTC, not the start time, so it
+  // is not used for the cutoff.)
+  const matchTime = Number(match.startTime);
+  if (Number.isFinite(matchTime) && matchTime > 1600000000000) {
+    if (matchTime - Date.now() <= 2 * 60 * 1000) {
+      return {
+        eligible: false,
+        error: 'Not applicable now. Contests and squad entries close 2 minutes before match start.'
+      };
     }
   }
 

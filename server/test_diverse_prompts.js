@@ -17,7 +17,7 @@ async function run() {
   for (let i = 0; i < prompts.length; i++) {
     console.log(`==================== PROMPT ${i + 1} ====================`);
     console.log(`Prompt: "${prompts[i]}"`);
-    const res = await generateCricSenseResponse(prompts[i], null, null);
+    const res = await generateCricSenseResponse({ query: prompts[i] });
     console.log('\nRetrieved Context:', res.retrievedContext);
     console.log('\nGenerated Reply:');
     console.log(res.reply);

@@ -3,9 +3,14 @@ const Contest = require('../models/contest');
 const Match = require('../models/match');
 const FantasyTeam = require('../models/fantasyTeam');
 const User = require('../models/user');
-const { requireAuth, authenticateToken } = require('./auth');
+const { requireAuth } = require('./auth');
 const { checkMatchEntryEligibility } = require('../helpers/matchTiming');
+const crypto = require('crypto');
 const router = express.Router();
+
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const makeContestCode = () =>
+  Array.from(crypto.randomBytes(6), (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
 
 // Create a new contest (Only logged-in users, before match starts and > 2 min before start)
 router.post('/create', requireAuth, async (req, res) => {
@@ -31,20 +36,42 @@ router.post('/create', requireAuth, async (req, res) => {
       return res.status(400).json({ error: eligibility.error });
     }
 
-    // Generate unique 6-character contest code
-    const contestId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const fee = Math.max(0, Math.floor(Number(entryFee) || 0));
+    const seats = Math.min(100, Math.max(2, Math.floor(Number(maxParticipants) || 20)));
 
-    const contest = new Contest({
-      contestId,
-      name: name.trim(),
-      createdBy: req.user._id,
-      matchId: match.matchId || match._id.toString(),
-      entryFee: Number(entryFee) || 0,
-      maxParticipants: Number(maxParticipants) || 20,
-      participants: [req.user._id]
-    });
+    // The creator is the first participant, so they pay the entry fee too
+    if (fee > 0) {
+      const charged = await User.updateOne(
+        { _id: req.user._id, virtualCoins: { $gte: fee } },
+        { $inc: { virtualCoins: -fee } }
+      );
+      if (charged.modifiedCount === 0) {
+        return res.status(400).json({ error: 'Insufficient fantasy points/coins balance for this entry fee.' });
+      }
+    }
 
-    await contest.save();
+    // Unique 6-character code without look-alike characters (no 0/O, 1/I/L)
+    let contest = null;
+    for (let attempt = 0; attempt < 5 && !contest; attempt++) {
+      try {
+        contest = await Contest.create({
+          contestId: makeContestCode(),
+          name: String(name).trim().slice(0, 60),
+          createdBy: req.user._id,
+          matchId: match.matchId || match._id.toString(),
+          entryFee: fee,
+          maxParticipants: seats,
+          prizePool: fee,
+          participants: [req.user._id]
+        });
+      } catch (e) {
+        if (e.code !== 11000) throw e; // duplicate code: try another
+      }
+    }
+    if (!contest) {
+      if (fee > 0) await User.updateOne({ _id: req.user._id }, { $inc: { virtualCoins: fee } });
+      return res.status(500).json({ error: 'Could not generate a contest code. Please try again.' });
+    }
 
     res.status(201).json({
       message: 'Contest created successfully',
@@ -94,29 +121,45 @@ router.post('/join/:contestId', requireAuth, async (req, res) => {
       });
     }
 
-    if (contest.participants.length >= contest.maxParticipants) {
+    const fee = contest.entryFee || 0;
+
+    // Take the entry fee first, only if the balance covers it (atomic, no double spend)
+    if (fee > 0) {
+      const charged = await User.updateOne(
+        { _id: req.user._id, virtualCoins: { $gte: fee } },
+        { $inc: { virtualCoins: -fee } }
+      );
+      if (charged.modifiedCount === 0) {
+        return res.status(400).json({ error: 'Insufficient fantasy points/coins balance.' });
+      }
+    }
+
+    // Take a seat atomically: never more than maxParticipants, even if several people
+    // join at the same moment
+    const updated = await Contest.findOneAndUpdate(
+      {
+        _id: contest._id,
+        isActive: true,
+        participants: { $ne: req.user._id },
+        $expr: { $lt: [{ $size: '$participants' }, '$maxParticipants'] },
+      },
+      { $addToSet: { participants: req.user._id }, $inc: { prizePool: fee } },
+      { returnDocument: 'after' }
+    );
+
+    if (!updated) {
+      if (fee > 0) await User.updateOne({ _id: req.user._id }, { $inc: { virtualCoins: fee } }); // refund
+      const fresh = await Contest.findById(contest._id);
+      if (fresh && fresh.participants.some((p) => p.toString() === userIdStr)) {
+        return res.json({ message: 'You have already joined this contest room.', contest: fresh, matchId: fresh.matchId });
+      }
       return res.status(400).json({ error: `Contest room is full (${contest.maxParticipants} players max).` });
     }
 
-    // Check virtual coin balance
-    if (req.user.virtualCoins < contest.entryFee) {
-      return res.status(400).json({ error: 'Insufficient fantasy points/coins balance.' });
-    }
-
-    // Deduct entry fee if any
-    if (contest.entryFee > 0) {
-      req.user.virtualCoins -= contest.entryFee;
-      await req.user.save();
-    }
-
-    contest.participants.push(req.user._id);
-    contest.prizePool += contest.entryFee;
-    await contest.save();
-
     res.json({
       message: 'Successfully joined contest room!',
-      contest,
-      matchId: contest.matchId
+      contest: updated,
+      matchId: updated.matchId
     });
   } catch (error) {
     console.error('Join contest error:', error);
