@@ -47,4 +47,13 @@ router.post('/ask', async (req, res) => {
   }
 });
 
+// GET /api/cricsense/knowledge: size of the RAG knowledge base (counts only, no content)
+router.get('/knowledge', async (req, res) => {
+  try {
+    res.json(await require('../services/ingestion').status());
+  } catch (error) {
+    res.status(500).json({ error: 'Knowledge base status unavailable' });
+  }
+});
+
 module.exports = router;

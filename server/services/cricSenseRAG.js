@@ -26,6 +26,9 @@ const Match = require('../models/match');
 const MatchPoint = require('../models/matchPoint');
 const cricketService = require('./cricketLiveService');
 const players = require('./playerService');
+const retrieval = require('./retrieval');
+const matchRecords = require('./matchRecords');
+const appGuide = require('../knowledge/appGuide');
 const { teamMentionScore, teamsMentioned, mentionsWomen, isWomenTeam } = require('../helpers/teamAliases');
 
 const LIST_FIELDS = 'matchId teamA teamB scoreA scoreB status matchStarted matchEnded venue date startTime matchType';
@@ -300,7 +303,7 @@ function fantasyAnswer(ctx) {
       (m.matchEnded ? '' : '\n\nTeam entries are locked because the match has started.');
   }
   const all = [...(squads?.squadA || []).map((p) => ({ ...p, team: m.teamA })), ...(squads?.squadB || []).map((p) => ({ ...p, team: m.teamB }))];
-  if (!all.length) return `The squads for **${m.teamA} vs ${m.teamB}** haven't been announced on Cricbuzz yet. Check back closer to the start.`;
+  if (!all.length) return `The squads for **${m.teamA} vs ${m.teamB}** haven't been announced yet. Check back closer to the start.`;
   const xiKnown = all.some((p) => p.playingXI === true);
   const pool = xiKnown ? all.filter((p) => p.playingXI) : all;
   const byRole = (r) => pool.filter((p) => p.fantasyRole === r).map((p) => `${p.name} (${p.team}${p.isCaptain ? ', c' : ''})`);
@@ -326,7 +329,7 @@ function squadsAnswer(ctx) {
   const { match: m, squads } = ctx;
   if (!squads || (!squads.squadA?.length && !squads.squadB?.length)) {
     return m.matchEnded ? `**${m.teamA} vs ${m.teamB}** is completed. See the Scorecard tab for who played.` :
-      `Squads for **${m.teamA} vs ${m.teamB}** aren't available on Cricbuzz yet.`;
+      `Squads for **${m.teamA} vs ${m.teamB}** aren't available yet.`;
   }
   const fmt = (team, list) => {
     const xi = list.filter((p) => p.playingXI === true);
@@ -397,7 +400,7 @@ function playerAnswer(profile, query, inMatch = []) {
   if (recent.length) {
     lines.push('', `**Recent ${recent === profile.recentBowling ? 'bowling' : 'scores'}**: ` + recent.slice(0, 5).map((r) => `${r.score} vs ${r.opp} (${r.format})`).join(', '));
   }
-  if (lines.length <= 2) lines.push('', 'Cricbuzz has no career stats for this player yet.');
+  if (lines.length <= 2) lines.push('', 'No career stats are available for this player yet.');
   return lines.join('\n');
 }
 
@@ -466,22 +469,27 @@ async function modelsToTry(key) {
 
 const SYSTEM_PROMPT = [
   'You are CricSense, the cricket assistant on the Striker live-score and fantasy app.',
-  'Answer using ONLY the DATA block of the latest message (fetched from Cricbuzz moments ago) and the earlier conversation.',
+  'Answer using ONLY the latest message\'s LIVE DATA (fetched moments ago), its numbered SOURCES (retrieved from the CricSense knowledge base: ball-by-ball commentary, scorecards, results, player profiles and app rules) and the earlier conversation.',
   'Rules:',
-  '- Never invent scores, statistics, records, percentages, pitch reports, weather, injuries or player form. If the data does not contain the answer, say so plainly and suggest what you can answer instead.',
-  '- Do not give win probabilities or betting advice. For fantasy questions you may compare players using the stats provided and explain the trade-offs, but the choice is the user\'s.',
+  '- Never invent scores, statistics, records, percentages, pitch reports, weather, injuries or player form. If neither the data nor the sources contain the answer, say so plainly and suggest what you can answer instead.',
+  '- When you use a SOURCE, cite it inline like [1] or [2]. Use LIVE DATA for the current score; use SOURCES for what happened earlier, commentary details, past results and app rules. Ignore sources that are not relevant to the question.',
+  '- Do not give win probabilities or betting advice. If asked, say CricSense does not predict results, then share the live situation and the real record from the data. For fantasy questions you may compare players using the stats provided and explain the trade-offs, but the choice is the user\'s.',
   '- Follow-up questions ("what about him?", "and the squads?") refer to the match or player from the conversation.',
   '- Reply in the language the user writes in (English, Hindi or Hinglish).',
+  '- Never mention or recommend any other website, app or data provider; just answer as CricSense.',
   '- Keep it short: 2 to 8 lines. Use **bold** for names and key numbers and "• " for bullet lines. No markdown tables or # headings.',
 ].join('\n');
 
-async function askGemini(question, facts, history) {
+async function askGemini(question, facts, history, sources = []) {
   const key = process.env.GEMINI_API_KEY;
   if (!key || key.length < 16) return null;
   if (Date.now() < llmBlockedUntil) return null;
+  const sourceBlock = sources.length
+    ? `\n\nSOURCES:\n${sources.map((c, i) => `[${i + 1}] (${c.title})\n${c.text.slice(0, 3500)}`).join('\n\n')}`
+    : '\n\nSOURCES: none found for this question.';
   const contents = [
     ...history.map((h) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.text }] })),
-    { role: 'user', parts: [{ text: `DATA (retrieved ${new Date().toISOString()}):\n${facts.map((f) => `- ${f}`).join('\n')}\n\nQUESTION: ${question}` }] },
+    { role: 'user', parts: [{ text: `LIVE DATA (retrieved ${new Date().toISOString()}):\n${facts.length ? facts.map((f) => `- ${f}`).join('\n') : '- none for this question'}${sourceBlock}\n\nQUESTION: ${question}` }] },
   ];
   // Gemini requires the conversation to start with a user turn
   while (contents.length && contents[0].role !== 'user') contents.shift();
@@ -534,6 +542,101 @@ async function askGemini(question, facts, history) {
   return null;
 }
 
+// ── Question types answered from the knowledge base ────────────────
+const RECORD_RE = /\b(win(ning)?\s*(percentage|%|rate|ratio|record)|win %|record|records against|head[\s-]*to[\s-]*head|h2h|track record|recent (results|form)|last \d+ (matches|games)|how many (matches|wins|games))\b/i;
+const PREDICT_RE = /\b(probability|chances?|predict(ion)?|odds|who will win|favou?rites?)\b/i;
+const STORY_RE = /\b(how did|what happened|how was|got out|get out|dismiss(ed|al)|dropped|review|drs|turning point|highlights?|key moments?|toss|pitch|conditions|team news|injur(y|ed)|report)\b/i;
+const GUIDE_RE = /\b(points? (system|rules?|calculat\w*)|how (are|is) (fantasy )?points|scoring (system|rules)|how many points|rules?|how (do|can) i (join|create|play|build|enter|win)|entry fee|coins?|deadline|(entries|teams?) (close|lock)|captain (gets?|earns?|points)|vice[- ]captain (gets?|earns?)|what is cricsense)\b/i;
+const STOP_WORDS = new Set(['what', 'when', 'where', 'which', 'with', 'that', 'this', 'about', 'they', 'them', 'from', 'were', 'there', 'their', 'have', 'happened', 'match', 'innings', 'over', 'overs', 'today', 'yesterday', 'tell', 'show', 'please', 'does', 'did', 'how', 'the', 'and', 'get', 'got']);
+
+const titleCase = (s) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+const teamsOf = (m) => [m.teamA, m.teamB].filter(Boolean).map((t) => t.toLowerCase());
+
+const FORMAT_IN_QUERY = (q) => (/\btests?\b/i.test(q) ? 'TEST' : /\bodis?\b|one.?day/i.test(q) ? 'ODI' : /\bt20i?s?\b/i.test(q) ? 'T20' : null);
+
+/** Win/loss records for the team(s) in the question (or in the match being discussed). */
+async function recordsFor(q, match, asked, women) {
+  let teams = asked.map((t) => titleCase(t) + (women ? ' Women' : ''));
+  if (!teams.length && match) teams = [match.teamA, match.teamB];
+  if (!teams.length) return [];
+  const format = FORMAT_IN_QUERY(q);
+  const jobs = [matchRecords.teamRecord(teams[0], { format })];
+  const opponent = teams[1] || (match && [match.teamA, match.teamB].find((t) => t.toLowerCase() !== teams[0].toLowerCase()
+    && [match.teamA, match.teamB].some((x) => x.toLowerCase() === teams[0].toLowerCase())));
+  if (opponent) jobs.push(matchRecords.teamRecord(teams[0], { format, opponent }));
+  return Promise.all(jobs);
+}
+
+function recordFacts(records) {
+  return records.flatMap((r) => [
+    matchRecords.recordText(r),
+    ...r.recent.map((x) => `${r.team} recent: vs ${x.opponent} (${x.format}, ${x.date}): ${x.status}`),
+  ]);
+}
+
+function recordAnswer(records, { predict, ctx } = {}) {
+  const lines = [];
+  if (predict) {
+    lines.push('CricSense doesn\'t predict results or quote win probabilities. Here is the real record and the situation right now.', '');
+    if (ctx?.match) lines.push(equationAnswer(ctx), '');
+  }
+  for (const r of records) {
+    lines.push(`📈 ${matchRecords.recordText(r).replace(r.team, `**${r.team}**`)}`);
+    if (r.recent.length && !r.opponent) {
+      lines.push(...r.recent.map((x) => `• vs ${x.opponent} (${x.format}, ${x.date}): ${x.status}`));
+    }
+    lines.push('');
+  }
+  return lines.join('\n').trim();
+}
+
+function guideAnswer(chunks) {
+  return chunks.filter((c) => c.type === 'guide').slice(0, 2)
+    .map((c, i) => `📘 **${c.title}** [${i + 1}]\n${c.text.split('\n').slice(1).map((l) => `• ${l}`).join('\n')}`)
+    .join('\n\n');
+}
+
+/**
+ * App-rules questions still work when retrieval is unavailable (no key, quota pause):
+ * rank the guide sections by keyword overlap instead of embeddings.
+ */
+function guideByKeywords(q) {
+  const stems = [...new Set((q.toLowerCase().match(/[a-z]{3,}/g) || []).filter((w) => !STOP_WORDS.has(w)).map((w) => w.slice(0, 5)))];
+  return appGuide
+    .map((g) => {
+      const body = `${g.title} ${g.text}`.toLowerCase();
+      return { g, score: stems.reduce((n, st) => n + (body.includes(st) ? 1 : 0), 0) };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 2)
+    .map(({ g }) => ({ key: `guide:${g.id}`, type: 'guide', title: g.title, text: g.text, similarity: 0 }));
+}
+
+/** "How did Babar get out?": what the scorecard says, plus the matching commentary. */
+function playerStoryAnswer(profile, inMatch, chunks) {
+  const surname = profile.name.split(' ').pop().toLowerCase();
+  const lines = [`👤 **${profile.name}** in this match`];
+  inMatch.forEach((l) => lines.push(`• ${l}`));
+  const idx = chunks.findIndex((c) => c.type === 'commentary' && c.text.toLowerCase().includes(surname));
+  if (idx >= 0) {
+    const hits = chunks[idx].text.split('\n').filter((l) => l.toLowerCase().includes(surname) && /\b(out|four|six|dropped|review|caught|bowled|lbw|edge)\b/i.test(l));
+    if (hits.length) lines.push('', `**From the commentary** [${idx + 1}]`, ...hits.slice(0, 4).map((l) => `• ${l.slice(0, 300)}`));
+  }
+  return lines.join('\n');
+}
+
+function storyAnswer(q, chunks) {
+  const words = (q.toLowerCase().match(/[a-z]{4,}/g) || []).filter((w) => !STOP_WORDS.has(w));
+  const idx = chunks.findIndex((c) => c.type === 'commentary' || c.type === 'scorecard' || c.type === 'result');
+  const c = chunks[idx >= 0 ? idx : 0];
+  const lines = c.text.split('\n').slice(1).filter(Boolean);
+  let picked = lines.filter((l) => words.some((w) => l.toLowerCase().includes(w)));
+  if (!picked.length) picked = lines.filter((l) => /\b(out|four|six|dropped|review|wicket)\b/i.test(l));
+  if (!picked.length) picked = lines.length ? lines : [c.text];
+  return `📝 **${c.title}** [${(idx >= 0 ? idx : 0) + 1}]\n\n` + picked.slice(0, 6).map((l) => `• ${l.slice(0, 300)}`).join('\n');
+}
+
 // ── Entry point ────────────────────────────────────────────────────
 /**
  * @param {object} p
@@ -547,18 +650,32 @@ async function generateCricSenseResponse({ query, pageMatchId, lastMatchId, last
   const q = String(query || '').trim();
   const named = await matchesNamedIn(q);
   const namedTeams = named.length > 0;
+  const isGuide = GUIDE_RE.test(q);
 
   // "Which matches are live?": no specific match needed
-  if (LIST_RE.test(q) && !namedTeams) {
+  if (LIST_RE.test(q) && !namedTeams && !isGuide) {
     const list = await liveListAnswer();
-    const llm = await askGemini(q, list.facts, history);
+    const llm = await askGemini(q, list.facts, history, []);
     return { reply: llm?.text || list.text, retrievedContext: { source: sourceLabel(llm) } };
   }
 
   const { match, how } = await resolveMatch(q, { pageMatchId, lastMatchId, named });
-  const ctx = match ? await buildMatchContext(match) : null;
+  const asked = teamsMentioned(q);
+  const women = mentionsWomen(q);
+  const scopeTeams = match ? teamsOf(match) : asked.map((t) => (women ? `${t} women` : t));
 
-  const found = await resolvePlayer(q, ctx, { lastPlayerId, matchNamed: namedTeams });
+  // Live data and the knowledge base are fetched in parallel
+  const [ctx, rag] = await Promise.all([
+    match ? buildMatchContext(match) : null,
+    retrieval.retrieve(q, { matchId: match?.matchId, teams: scopeTeams, k: 4 }).catch((err) => {
+      console.warn('RAG retrieval failed:', err.message);
+      return { chunks: [], via: 'error' };
+    }),
+  ]);
+  const chunks = rag.chunks || [];
+  if (isGuide && !chunks.some((c) => c.type === 'guide')) chunks.unshift(...guideByKeywords(q));
+
+  const found = isGuide ? { best: null, ambiguous: [] } : await resolvePlayer(q, ctx, { lastPlayerId, matchNamed: namedTeams });
   if (!found.best && found.ambiguous.length > 1) {
     const names = found.ambiguous.map((p) => `• ${p.name}${p.team ? ` (${p.team})` : ''}`).join('\n');
     return {
@@ -566,24 +683,26 @@ async function generateCricSenseResponse({ query, pageMatchId, lastMatchId, last
       retrievedContext: { ...matchContext(match), source: 'player-lookup' },
     };
   }
-
   const profile = found.best ? await players.fetchPlayerProfile(found.best.id) : null;
 
-  // A national side was named ("Aussies", "Proteas") but nothing in the feed involves it:
-  // say so instead of answering about a different match
-  const asked = teamsMentioned(q);
-  if (!profile && asked.length && !namedTeams) {
+  const wantsRecord = RECORD_RE.test(q);
+  const wantsPrediction = PREDICT_RE.test(q);
+  const records = (wantsRecord || wantsPrediction) && !profile ? await recordsFor(q, match, asked, women) : [];
+
+  // A national side was named but nothing current involves it, and nothing on record helps
+  if (!profile && asked.length && !namedTeams && !records.some((r) => r.played) && !chunks.length) {
     const list = await liveListAnswer();
-    const names = asked.map((t) => t.replace(/\b[a-z]/g, (c) => c.toUpperCase())).join(' / ');
+    const names = asked.map(titleCase).join(' / ');
     return {
-      reply: `There's no live, upcoming or recent **${names}** match in the Cricbuzz feed right now.\n\n${list.text}`,
+      reply: `There's no live, upcoming or recent **${names}** match right now.\n\n${list.text}`,
       retrievedContext: { source: 'match-lookup' },
     };
   }
+
   // A player question about someone not in this match shouldn't drag in an unrelated match
   const useMatch = ctx && (!profile || namedTeams || how !== 'conversation' || playerInMatch(ctx, profile).length);
 
-  if (!profile && !ctx) {
+  if (!profile && !useMatch && !records.length && !chunks.length) {
     const list = await liveListAnswer();
     return {
       reply: "I couldn't tell which match or player you mean. Name a team (\"Ind\", \"Aussies\", \"Proteas\"...) or a player (\"Kohli career stats\"), or open a match and ask from there." +
@@ -596,16 +715,31 @@ async function generateCricSenseResponse({ query, pageMatchId, lastMatchId, last
   const facts = [
     ...(useMatch ? matchFacts(ctx) : []),
     ...(profile ? playerFacts(profile, inMatch) : []),
+    ...recordFacts(records),
   ];
-  const llm = await askGemini(q, facts, history);
-  const reply = llm?.text || (profile ? playerAnswer(profile, q, inMatch) : ANSWERS[detectIntent(q)](ctx));
+  const llm = await askGemini(q, facts, history, chunks);
+
+  // Without the LLM: pick the answer that fits the question best
+  let reply = llm?.text;
+  if (!reply) {
+    if (profile && STORY_RE.test(q) && inMatch.length) reply = playerStoryAnswer(profile, inMatch, chunks);
+    else if (profile) reply = playerAnswer(profile, q, inMatch);
+    else if (isGuide && chunks.some((c) => c.type === 'guide')) reply = guideAnswer(chunks);
+    else if (records.length) reply = recordAnswer(records, { predict: wantsPrediction, ctx: useMatch ? ctx : null });
+    else if (STORY_RE.test(q) && chunks.length) reply = storyAnswer(q, chunks);
+    else if (useMatch) reply = ANSWERS[detectIntent(q)](ctx);
+    else reply = storyAnswer(q, chunks);
+  }
 
   return {
     reply,
     retrievedContext: {
       ...(useMatch ? matchContext(match) : {}),
-      ...(profile ? { playerId: profile.id, player: profile.name, profileUrl: profile.url } : {}),
-      source: sourceLabel(llm),
+      ...(profile ? { playerId: profile.id, player: profile.name } : {}),
+      source: sourceLabel(llm, chunks),
+      sources: chunks.map((c, i) => ({ n: i + 1, type: c.type, title: c.title, similarity: Math.round((c.similarity || 0) * 1000) / 1000 })),
+      retrieval: rag.via,
+      ...(llm ? { model: llm.model } : {}),
     },
   };
 }
@@ -622,6 +756,29 @@ function matchContext(match) {
   };
 }
 
-const sourceLabel = (llm) => (llm ? `${llm.model} + Cricbuzz data` : 'Cricbuzz data');
+const sourceLabel = (llm, chunks = []) => (llm ? 'AI answer' : 'Live data') + (chunks.length ? ` · ${chunks.length} source${chunks.length === 1 ? '' : 's'}` : (llm ? ' · live data' : ''));
 
-module.exports = { generateCricSenseResponse, detectIntent };
+/**
+ * At server start, find a Gemini model that is responding right now, so the first user
+ * question doesn't spend its time budget on overloaded models.
+ */
+async function warmUpModel() {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key || key.length < 16 || process.env.GEMINI_MODEL) return;
+  for (const model of (await modelsToTry(key)).slice(0, MAX_MODEL_TRIES)) {
+    try {
+      await axios.post(`${GEMINI_API}/${model}:generateContent`,
+        { contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }], generationConfig: { maxOutputTokens: 256 } },
+        { timeout: 10000, headers: { 'x-goog-api-key': key } });
+      preferred = { name: model, time: Date.now() };
+      console.log(`CricSense: ${model} is responding; using it`);
+      return;
+    } catch (err) {
+      const status = err.response?.status;
+      if ([401, 402, 403].includes(status)) return;
+      benchedUntil.set(model, Date.now() + (status === 404 ? 12 * 60 * 60 * 1000 : BENCH_MS));
+    }
+  }
+}
+
+module.exports = { generateCricSenseResponse, detectIntent, warmUpModel };

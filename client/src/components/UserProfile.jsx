@@ -228,7 +228,7 @@ const UserProfile = () => {
             <Icon name="shield" size={20} color="#059669" />
             <div>
               <div className="feature-box-title">Verified Fair Play</div>
-              <div className="feature-box-desc">Scores come from Cricbuzz, with a player-by-player points breakdown.</div>
+              <div className="feature-box-desc">Points update from the live scorecard, with a player-by-player breakdown.</div>
             </div>
           </div>
           <div className="profile-feature-box">

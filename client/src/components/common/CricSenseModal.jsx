@@ -13,7 +13,7 @@ const welcomeFor = (match) => {
   }
   return {
     sender: 'ai',
-    text: `🏏 **Welcome to CricSense!**\n\nAsk about any match by team ("Ind score", "Aussies", "Proteas squads") or any player ("Kohli career stats", "Bumrah in Tests"). Follow-up questions remember what we were talking about. Answers come only from real Cricbuzz data.`,
+    text: `🏏 **Welcome to CricSense!**\n\nAsk about any match by team ("Ind score", "Aussies", "Proteas squads") or any player ("Kohli career stats", "Bumrah in Tests"). Follow-up questions remember what we were talking about. Every answer comes from live match data.`,
     context: null,
   };
 };
@@ -160,19 +160,21 @@ export const CricSenseModal = ({ isOpen, onClose, activeMatch }) => {
                       : <React.Fragment key={j}>{part.replace(/(^|\s)_([^_]+)_(?=\s|$|[.,])/g, '$1$2')}</React.Fragment>
                   )}
                 </div>
-                {m.sender === 'ai' && (m.context?.fixture || m.context?.player) && (
+                {m.sender === 'ai' && (m.context?.fixture || m.context?.player || m.context?.sources?.length > 0) && (
                   <div className="ai-msg-source">
-                    <Icon name={m.context.player ? 'user' : 'mappin'} size={11} />
+                    <Icon name={m.context.player ? 'user' : m.context.fixture ? 'mappin' : 'sparkles'} size={11} />
                     <span>
-                      {m.context.player && (
-                        m.context.profileUrl
-                          ? <a href={m.context.profileUrl} target="_blank" rel="noopener noreferrer">{m.context.player}</a>
-                          : m.context.player
-                      )}
-                      {m.context.player && m.context.fixture ? ' · ' : ''}
-                      {m.context.fixture || ''}
-                      {m.context.source ? ` · ${m.context.source}` : ''}
+                      {[m.context.player, m.context.fixture, m.context.source].filter(Boolean).join(' · ')}
                     </span>
+                  </div>
+                )}
+                {m.sender === 'ai' && m.context?.sources?.length > 0 && (
+                  <div className="ai-source-chips">
+                    {m.context.sources.map((src) => (
+                      <span key={src.n} className={`ai-source-chip type-${src.type}`} title={src.title}>
+                        <b>[{src.n}]</b> {src.title}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
@@ -183,7 +185,7 @@ export const CricSenseModal = ({ isOpen, onClose, activeMatch }) => {
               <div className="ai-bubble">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b', marginBottom: 4 }}>
                   <Icon name="sparkles" size={13} color="#2563eb" />
-                  <span>Checking live Cricbuzz data…</span>
+                  <span>Checking live match data…</span>
                 </div>
                 <div className="ai-typing-dots">
                   <span /><span /><span />

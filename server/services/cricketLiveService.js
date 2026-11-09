@@ -764,6 +764,46 @@ async function fetchMatchSquads(matchId, matchRecord) {
   return result;
 }
 
+/**
+ * Full ball-by-ball commentary for one innings (1-4), oldest ball first.
+ * Cricbuzz marks some words with placeholders (e.g. "B0$" → "SIX"); those are filled in.
+ * Returns [] when the innings doesn't exist (yet).
+ */
+async function fetchFullCommentary(matchId, inningsNo) {
+  try {
+    const res = await axios.get(`https://www.cricbuzz.com/api/mcenter/${matchId}/full-commentary/${inningsNo}`, {
+      headers: { 'User-Agent': USER_AGENT },
+      timeout: 10000,
+    });
+    const list = res.data?.commentary?.[0]?.commentaryList || [];
+    return list
+      .filter((c) => c && c.commText)
+      .map((c) => {
+        let text = String(c.commText);
+        for (const fmt of Object.values(c.commentaryFormats || {})) {
+          (fmt.formatId || []).forEach((id, i) => { text = text.split(id).join(fmt.formatValue?.[i] ?? ''); });
+        }
+        return {
+          inningsId: c.inningsId,
+          over: c.overNumber ?? null,
+          ballNbr: c.ballNbr || 0,
+          event: c.event || 'NONE',
+          batTeam: c.batTeamName || '',
+          text: text.replace(/\s+/g, ' ').trim(),
+          overSummary: c.overSeparator ? {
+            score: c.overSeparator.score, wickets: c.overSeparator.wickets, runs: c.overSeparator.runs,
+            summary: (c.overSeparator.o_summary || '').trim(),
+          } : null,
+          timestamp: c.timestamp || 0,
+        };
+      })
+      .sort((a, b) => a.timestamp - b.timestamp);
+  } catch (err) {
+    if (err.response?.status !== 404) console.warn(`Commentary ${matchId}/${inningsNo} unavailable:`, err.message);
+    return [];
+  }
+}
+
 module.exports = {
   convertGmtToIst,
   fetchAllRealMatches,
@@ -771,6 +811,7 @@ module.exports = {
   fetchMatchState,
   fetchLiveTelemetry,
   fetchMatchSquads,
+  fetchFullCommentary,
   deriveMatchFlags,
   extractNextData,
   extractBalancedJson,

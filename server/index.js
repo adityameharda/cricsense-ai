@@ -73,7 +73,12 @@ server.listen(PORT, () => {
 });
 
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/cricscore')
-  .then(() => console.log('Connected to MongoDB'))
+  .then(() => {
+    console.log('Connected to MongoDB');
+    // RAG knowledge base: builds the vector index and starts ingesting documents
+    require('./services/ingestion').start();
+    require('./services/cricSenseRAG').warmUpModel().catch(() => {});
+  })
   .catch((err) => console.error('MongoDB connection error:', err));
 
 // Keep-alive: Render's free tier sleeps after 15 minutes without traffic, which
